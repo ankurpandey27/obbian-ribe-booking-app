@@ -8,6 +8,7 @@ import {
 import { PricingService } from './services/pricing.service';
 import { QuoteResult } from './services/pricing.service';
 import { RideTypeValue } from '../../shared/types/common';
+import { Public } from '../../common/auth/decorators';
 
 @ApiTags('pricing')
 @Controller('rides')
@@ -15,6 +16,7 @@ export class PricingController {
   constructor(private readonly pricingService: PricingService) {}
 
   @Get('quote')
+  @Public()
   @ApiOperation({ summary: 'Fare quote for all ride types (screen 5)' })
   @ApiOkResponse({ type: QuoteResult })
   @ApiQuery({
