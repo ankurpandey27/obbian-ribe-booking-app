@@ -1,0 +1,31 @@
+# node_modules
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# environment — never bake real credentials into images
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+
+# test / coverage
+coverage/
+.nyc_output/
+
+# IDE / OS / misc
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.tmp/
+.git/
+.gitignore
+docker-compose.yml
+README.md
+scripts/
