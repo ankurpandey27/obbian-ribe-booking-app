@@ -14,6 +14,7 @@ import { RolesGuard } from './common/auth/roles.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { DriversModule } from './modules/drivers/drivers.module';
+import { HealthModule } from './modules/health/health.module';
 import { MapsModule } from './modules/maps/maps.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { RidesModule } from './modules/rides/rides.module';
@@ -56,6 +57,7 @@ import { ConfigService } from '@nestjs/config';
     AuthModule,
     UsersModule,
     DriversModule,
+    HealthModule,
     MapsModule,
     PricingModule,
     RidesModule,
