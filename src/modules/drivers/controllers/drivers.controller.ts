@@ -62,7 +62,7 @@ export class DriversController {
   }
 
   @Get(':driverId')
-  @ApiOperation({ summary: 'Driver public profile (for riders)' })
+  @ApiOperation({ summary: 'Driver profile for riders (any authenticated user)' })
   @ApiOkResponse({ type: DriverProfileDto })
   @ApiParam({
     name: 'driverId',

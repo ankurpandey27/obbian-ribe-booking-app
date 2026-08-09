@@ -36,7 +36,7 @@ async function bootstrap() {
       [
         'Modular-monolith ride booking backend — rider & driver flows.',
         '',
-        '**Auth:** all endpoints except `auth/*`, `maps/*` and the Razorpay webhook require a Bearer token (JWT). Get one via `POST /auth/send-otp` + `POST /auth/verify-otp` (dev OTP: `123456`), then click **Authorize** and paste the token (without the `Bearer ` prefix — Swagger adds it).',
+        '**Auth:** public endpoints — `auth/*`, `health`, `maps/*`, `rides/quote` and `payments/webhook` — need no token. Everything else requires a Bearer token (JWT). Get one via `POST /auth/send-otp` + `POST /auth/verify-otp` (dev OTP: `123456`), then click **Authorize** and paste the token (without the `Bearer ` prefix — Swagger adds it).',
         '',
         '**Error contract:** every failure returns `ApiErrorDto` with `statusCode`, `message`, `error`, `timestamp`, `path`, `requestId`.',
         '',
