@@ -7,18 +7,35 @@ export const serverConfig = registerAs('server', () => ({
   host: process.env.HOST || '0.0.0.0',
 }));
 
-export const databaseConfig = registerAs('database', () => ({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  name: process.env.DB_NAME || 'ride_booking',
-}));
+// Prefer DATABASE_URL (managed providers like Neon/Render/AWS) and fall back
+// to individual DB_* vars for docker-compose / local dev.
+export const databaseConfig = registerAs('database', () => {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname,
+      port: Number(parsed.port || 5432),
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      name: parsed.pathname.replace(/^\//, ''),
+    };
+  }
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    name: process.env.DB_NAME || 'ride_booking',
+  };
+});
 
 export const redisConfig = registerAs('redis', () => ({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
+  // managed Redis (Upstash, Redis Cloud) is TLS-only; set REDIS_TLS=true
+  tls: (process.env.REDIS_TLS ?? 'false') === 'true',
 }));
 
 export const kafkaConfig = registerAs('kafka', () => ({

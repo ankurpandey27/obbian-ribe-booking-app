@@ -20,10 +20,12 @@ export const REDIS_PUBLISHER = 'REDIS_PUBLISHER';
         const host = config.get<string>('redis.host', 'localhost');
         const port = config.get<number>('redis.port', 6379);
         const password = config.get<string>('redis.password');
+        const tls = config.get<boolean>('redis.tls', false);
         const client = new Redis({
           host,
           port,
           password,
+          tls: tls ? {} : undefined,
           lazyConnect: true,
           maxRetriesPerRequest: null,
         });
@@ -40,10 +42,12 @@ export const REDIS_PUBLISHER = 'REDIS_PUBLISHER';
         const host = config.get<string>('redis.host', 'localhost');
         const port = config.get<number>('redis.port', 6379);
         const password = config.get<string>('redis.password');
+        const tls = config.get<boolean>('redis.tls', false);
         const client = new Redis({
           host,
           port,
           password,
+          tls: tls ? {} : undefined,
           lazyConnect: true,
           maxRetriesPerRequest: null,
         });

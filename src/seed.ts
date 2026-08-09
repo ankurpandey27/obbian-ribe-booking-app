@@ -141,6 +141,7 @@ async function main() {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6380),
     password: process.env.REDIS_PASSWORD || undefined,
+    tls: (process.env.REDIS_TLS ?? 'false') === 'true' ? {} : undefined,
   });
 
   const userRepo = ds.getRepository(User);
