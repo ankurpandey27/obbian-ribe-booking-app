@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Driver } from '../entities/driver.entity';
@@ -33,7 +38,7 @@ export class DriversService {
   async register(userId: string, dto: RegisterDriverDto): Promise<Driver> {
     const existing = await this.driverRepo.findOneBy({ userId });
     if (existing) {
-      throw new NotFoundException(
+      throw new ConflictException(
         'Driver profile already exists for this user',
       );
     }

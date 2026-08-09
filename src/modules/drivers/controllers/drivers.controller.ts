@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Post, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -39,6 +40,10 @@ export class DriversController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register driver profile (any authenticated user)' })
   @ApiCreatedResponse({ type: DriverRegisterResultDto })
+  @ApiConflictResponse({
+    type: ApiErrorDto,
+    description: 'Driver profile already exists for this user',
+  })
   async register(
     @CurrentUser() user: JwtPayload,
     @Body() dto: RegisterDriverDto,
