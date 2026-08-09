@@ -36,7 +36,7 @@ async function bootstrap() {
       [
         'Modular-monolith ride booking backend — rider & driver flows.',
         '',
-        '**Auth:** all endpoints except `auth/*`, `maps/*` and the Razorpay webhook require a Bearer token (JWT). Get one via `POST /auth/send-otp` + `POST /auth/verify-otp` (dev OTP: `123456`), then click **Authorize** and paste `Bearer <token>`.',
+        '**Auth:** all endpoints except `auth/*`, `maps/*` and the Razorpay webhook require a Bearer token (JWT). Get one via `POST /auth/send-otp` + `POST /auth/verify-otp` (dev OTP: `123456`), then click **Authorize** and paste the token (without the `Bearer ` prefix — Swagger adds it).',
         '',
         '**Error contract:** every failure returns `ApiErrorDto` with `statusCode`, `message`, `error`, `timestamp`, `path`, `requestId`.',
         '',
@@ -44,10 +44,7 @@ async function bootstrap() {
       ].join('\n'),
     )
     .setVersion('0.1.0')
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-      'access-token',
-    )
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .addTag('auth', 'OTP login, token refresh, logout')
     .addTag('users', 'Rider profile & saved locations')
     .addTag('drivers', 'Driver onboarding, status, live location, ride actions')
