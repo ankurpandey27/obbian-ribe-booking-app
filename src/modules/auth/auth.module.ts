@@ -1,0 +1,21 @@
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthController } from './controllers/auth.controller';
+import { AuthService } from './services/auth.service';
+import { OtpService } from './services/otp.service';
+import { TokenService } from './services/token.service';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { UsersModule } from '../users/users.module';
+
+@Module({
+  imports: [
+    UsersModule,
+    TypeOrmModule.forFeature([RefreshToken]),
+    JwtModule.register({ global: true }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, OtpService, TokenService],
+  exports: [TokenService, OtpService],
+})
+export class AuthModule {}
