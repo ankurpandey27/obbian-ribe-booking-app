@@ -1,18 +1,36 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ApiErrorDto } from './common/dto/api-error';
 import { ApiErrorFilter } from './common/filters/api-error.filter';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 
+/** Default body cap — ride APIs are JSON-only and tiny; blunt DoS guard. */
+const JSON_BODY_LIMIT = '64kb';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    rawBody: false,
+  });
   const config = app.get(ConfigService);
 
   const apiPrefix = config.get<string>('server.apiPrefix', 'api/v1');
   app.setGlobalPrefix(apiPrefix);
+
+  // Behind Render/ALB — required so rate-limiting sees real client IPs.
+  app.set('trust proxy', 1);
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Swagger UI needs inline scripts
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
 
   // Unified API contract enforcement
   app.useGlobalPipes(
@@ -26,7 +44,19 @@ async function bootstrap() {
   app.useGlobalInterceptors(new RequestIdInterceptor());
   app.useGlobalFilters(new ApiErrorFilter());
 
-  app.enableCors({ origin: true, credentials: true });
+  // CORS: explicit allow-list. Comma-separated origins in CORS_ORIGINS;
+  // unset → same-origin/API clients only (mobile apps send no Origin).
+  const corsOrigins = config
+    .get<string>('security.corsOrigins', '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: corsOrigins.length > 0 ? corsOrigins : false,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    maxAge: 86400,
+  });
   app.enableShutdownHooks();
 
   // OpenAPI docs at /api/v1/docs

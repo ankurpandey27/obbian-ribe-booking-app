@@ -56,6 +56,27 @@ export class GeoService {
     return raw ? JSON.parse(raw) : null;
   }
 
+  /**
+   * Keep only drivers whose heartbeat key is still alive (TTL not expired).
+   * This is what makes a driver who stopped pinging (app killed, no network)
+   * un-matchable within HEARTBEAT_TTL_SECONDS — enforced at match time, not
+   * by a cleanup cron. Single pipelined round-trip regardless of batch size.
+   */
+  async filterFreshDrivers(driverIds: string[]): Promise<string[]> {
+    if (driverIds.length === 0) return [];
+    const pipeline = this.redis.pipeline();
+    for (const id of driverIds) {
+      pipeline.exists(`driver:${id}:heartbeat`);
+    }
+    const results = await pipeline.exec();
+    if (!results) return [];
+    const fresh: string[] = [];
+    results.forEach(([err, exists], i) => {
+      if (!err && Number(exists) === 1) fresh.push(driverIds[i]);
+    });
+    return fresh;
+  }
+
   /** Set (or refresh) the driver's online heartbeat with TTL. */
   async setHeartbeat(driverId: string, ttlSeconds: number): Promise<void> {
     await this.redis.set(`driver:${driverId}:heartbeat`, '1', 'EX', ttlSeconds);

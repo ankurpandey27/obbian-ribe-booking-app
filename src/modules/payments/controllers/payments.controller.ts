@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -21,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { PaymentsService } from '../services/payments.service';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
+import { Roles } from '../../../common/auth/decorators';
 import { JwtPayload } from '../../auth/services/token.service';
 import {
   InitiatePaymentDto,
@@ -32,6 +34,7 @@ import {
   WebhookResultDto,
 } from '../dto/payments.dto';
 import { RidesService } from '../../rides/services/rides.service';
+import { RideParticipantGuard } from '../../rides/guards/ride-participant.guard';
 import { Public } from '../../../common/auth/decorators';
 import { ApiErrorDto } from '../../../common/dto/api-error';
 
@@ -112,6 +115,7 @@ export class PaymentsController {
   }
 
   @Get(':rideId')
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({ summary: 'Payment + receipt for a ride' })
   @ApiOkResponse({ type: PaymentReceiptDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
@@ -134,7 +138,8 @@ export class PaymentsController {
 
   @Post(':rideId/refund')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refund a completed payment' })
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Refund a completed payment (ADMIN only)' })
   @ApiOkResponse({ type: RefundResultDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
   @ApiNotFoundResponse({ type: ApiErrorDto, description: 'Payment not found' })

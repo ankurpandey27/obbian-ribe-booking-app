@@ -10,6 +10,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,6 +25,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { RidesService } from '../services/rides.service';
+import { RideParticipantGuard } from '../guards/ride-participant.guard';
 import { PricingService } from '../../pricing/services/pricing.service';
 import { PromosService } from '../../promos/services/promos.service';
 import { SurgeService } from '../../pricing/services/surge.service';
@@ -78,25 +80,21 @@ export class RidesController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: RequestRideDto,
   ) {
-    await this.fraudService.guardRideRequest(
-      user.sub,
-      dto.pickupLat,
-      dto.pickupLon,
-      dto.city ?? 'Delhi',
-    );
+    const city = dto.city ?? 'Delhi';
 
-    const config = await this.pricingService.getConfig(
-      dto.city ?? 'Delhi',
-      dto.rideType,
-    );
-    const quote = await this.pricingService.getQuote(
-      dto.pickupLat,
-      dto.pickupLon,
-      dto.dropoffLat,
-      dto.dropoffLon,
-      dto.city ?? 'Delhi',
-      [dto.rideType],
-    );
+    // Fraud guard, fare config and route quote are independent — fan out.
+    const [config, quote] = await Promise.all([
+      this.pricingService.getConfig(city, dto.rideType),
+      this.pricingService.getQuote(
+        dto.pickupLat,
+        dto.pickupLon,
+        dto.dropoffLat,
+        dto.dropoffLon,
+        city,
+        [dto.rideType],
+      ),
+      this.fraudService.guardRideRequest(user.sub, dto.pickupLat, dto.pickupLon, city),
+    ]);
 
     const estimatedFare = this.pricingService.calculateFare(
       config,
@@ -108,39 +106,44 @@ export class RidesController {
     const lockedFare =
       quotedOption && quote.surgeMultiplier ? quotedOption.fare : estimatedFare;
 
-    // Promo validated at request time; discount locks with the fare.
+    // Promo redeemed atomically at request time; discount locks with the fare.
     let promoDiscount = 0;
     if (dto.promoCode) {
-      const promo = await this.promosService.validate(dto.promoCode, user.sub);
+      const promo = await this.promosService.redeem(dto.promoCode, user.sub);
       promoDiscount = Math.min(
         Math.round(((lockedFare * promo.discountPercent) / 100) * 2) / 2,
         promo.maxDiscount,
       );
     }
 
-    const ride = await this.ridesService.createRide({
-      riderId: user.sub,
-      pickupLat: dto.pickupLat,
-      pickupLon: dto.pickupLon,
-      dropoffLat: dto.dropoffLat,
-      dropoffLon: dto.dropoffLon,
-      rideType: dto.rideType,
-      city: dto.city ?? 'Delhi',
-      estimatedFare: lockedFare,
-      distanceKm: quote.distanceKm,
-      durationMin: Math.max(0, Math.round(quote.durationMin ?? 0)),
-      surgeMultiplier: quote.surgeMultiplier ?? Number(config.surgeMultiplier),
-      promoCode: dto.promoCode,
-      promoDiscount,
-    });
-
-    if (dto.promoCode) {
-      await this.promosService
-        .markUsed(dto.promoCode, user.sub)
-        .catch(() => {});
+    let ride;
+    try {
+      ride = await this.ridesService.createRide({
+        riderId: user.sub,
+        pickupLat: dto.pickupLat,
+        pickupLon: dto.pickupLon,
+        dropoffLat: dto.dropoffLat,
+        dropoffLon: dto.dropoffLon,
+        rideType: dto.rideType,
+        city,
+        estimatedFare: lockedFare,
+        distanceKm: quote.distanceKm,
+        durationMin: Math.max(0, Math.round(quote.durationMin ?? 0)),
+        surgeMultiplier: quote.surgeMultiplier ?? Number(config.surgeMultiplier),
+        promoCode: dto.promoCode,
+        promoDiscount,
+      });
+    } catch (err) {
+      // Ride failed after claiming the promo — give the use back.
+      if (dto.promoCode) {
+        await this.promosService
+          .release(dto.promoCode, user.sub)
+          .catch(() => undefined);
+      }
+      throw err;
     }
     // Demand signal for the surge engine (best effort, never blocks).
-    await this.surgeService.recordDemand(dto.city ?? 'Delhi').catch(() => {});
+    void this.surgeService.recordDemand(city).catch(() => undefined);
 
     return {
       rideId: ride.id,
@@ -244,6 +247,7 @@ export class RidesController {
   }
 
   @Get(':rideId')
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({ summary: 'Ride details + live driver info' })
   @ApiOkResponse({ type: RideDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
@@ -255,6 +259,7 @@ export class RidesController {
 
   @Put(':rideId/cancel')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({ summary: 'Cancel ride → refund amount' })
   @ApiOkResponse({ type: CancelRideResultDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
@@ -280,6 +285,7 @@ export class RidesController {
 
   @Post(':rideId/rate')
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({ summary: 'Rate a completed ride' })
   @ApiCreatedResponse({ type: RateRideResultDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })

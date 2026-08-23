@@ -7,9 +7,15 @@ import { Ride } from '../rides/entities/ride.entity';
 import { GeoService } from '../../common/redis/geo.service';
 import { AuthModule } from '../auth/auth.module';
 import { MapsModule } from '../maps/maps.module';
+import { RidesModule } from '../rides/rides.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Ride]), AuthModule, MapsModule],
+  imports: [
+    TypeOrmModule.forFeature([Ride]),
+    AuthModule,
+    MapsModule,
+    RidesModule,
+  ],
   controllers: [TrackingController],
   providers: [TrackingGateway, TrackingService, GeoService],
   exports: [TrackingService],

@@ -1,18 +1,13 @@
 import {
   ConflictException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Driver } from '../entities/driver.entity';
 import { GeoService } from '../../../common/redis/geo.service';
 import { DriverStatusValue, RideTypeValue } from '../../../shared/types/common';
-import {
-  UserLookupPort,
-  USER_LOOKUP,
-} from '../../../shared/contracts/user-lookup.port';
 import { RegisterDriverDto } from '../dto/drivers.dto';
 
 const HEARTBEAT_TTL_SECONDS = 90;
@@ -28,11 +23,13 @@ export class DriversService {
   constructor(
     @InjectRepository(Driver) private readonly driverRepo: Repository<Driver>,
     private readonly geo: GeoService,
-    @Inject(USER_LOOKUP) private readonly users: UserLookupPort,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   /**
    * Register driver profile + promote user role to DRIVER.
+   * Both writes run in ONE transaction: a partial state (profile without
+   * role, or role without profile) is impossible by construction.
    * Client re-verifies OTP afterwards to pick up the DRIVER role in the JWT.
    */
   async register(userId: string, dto: RegisterDriverDto): Promise<Driver> {
@@ -43,18 +40,21 @@ export class DriversService {
       );
     }
 
-    await this.users.updateRole(userId, 'DRIVER');
-    const driver = await this.driverRepo.save({
-      userId,
-      licenseNumber: dto.licenseNumber,
-      vehicleRegistration: dto.vehicleRegistration,
-      vehicleModel: dto.vehicleModel,
-      vehicleColor: dto.vehicleColor,
-      vehicleType: dto.vehicleType,
-      upiId: dto.upiId,
-      status: 'OFFLINE',
+    return this.dataSource.transaction(async (em) => {
+      const driver = await em.save(Driver, {
+        userId,
+        licenseNumber: dto.licenseNumber,
+        vehicleRegistration: dto.vehicleRegistration,
+        vehicleModel: dto.vehicleModel,
+        vehicleColor: dto.vehicleColor,
+        vehicleType: dto.vehicleType,
+        upiId: dto.upiId,
+        status: 'OFFLINE',
+      });
+      // Parameterized update against the users table within the same tx.
+      await em.update('users', { id: userId }, { role: 'DRIVER' });
+      return driver;
     });
-    return driver;
   }
 
   async getProfile(driverId: string): Promise<Driver> {
@@ -130,7 +130,12 @@ export class DriversService {
     await this.geo.setHeartbeat(driverId, HEARTBEAT_TTL_SECONDS);
   }
 
-  /** Returns candidate drivers for matching, pre-filtered by vehicle type. */
+  /**
+   * Returns candidate drivers for matching, pre-filtered by vehicle type.
+   * Three-stage filter, cheapest first: geo radius (Redis) → heartbeat
+   * freshness (Redis pipeline) → status/vehicle (Postgres). A driver who
+   * stopped pinging is excluded here — never offered a ride.
+   */
   async findMatchableDrivers(
     lon: number,
     lat: number,
@@ -138,12 +143,15 @@ export class DriversService {
     vehicleType: RideTypeValue,
     limit = 20,
   ): Promise<Driver[]> {
-    const ids = await this.geo.findNearbyDriverIds(lon, lat, radiusKm, limit);
-    if (ids.length === 0) return [];
+    const geoIds = await this.geo.findNearbyDriverIds(lon, lat, radiusKm, limit);
+    if (geoIds.length === 0) return [];
+
+    const freshIds = await this.geo.filterFreshDrivers(geoIds);
+    if (freshIds.length === 0) return [];
 
     return this.driverRepo
       .createQueryBuilder('d')
-      .where('d.userId IN (:...ids)', { ids })
+      .where('d.userId IN (:...ids)', { ids: freshIds })
       .andWhere('d.status = :status', { status: 'ONLINE' })
       .andWhere('d.vehicleType = :vehicleType', { vehicleType })
       .orderBy('d.rating', 'DESC')

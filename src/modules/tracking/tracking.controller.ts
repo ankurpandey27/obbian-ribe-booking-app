@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiNotFoundResponse,
@@ -9,6 +9,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { TrackingService } from './services/tracking.service';
+import { RideParticipantGuard } from '../rides/guards/ride-participant.guard';
 import { EtaDto, TrackingDto } from './dto/tracking.dto';
 import { ApiErrorDto } from '../../common/dto/api-error';
 
@@ -23,6 +24,7 @@ export class TrackingController {
   constructor(private readonly trackingService: TrackingService) {}
 
   @Get(':rideId/tracking')
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({
     summary: 'REST fallback: current driver position + route + ETA',
   })
@@ -34,6 +36,7 @@ export class TrackingController {
   }
 
   @Get(':rideId/eta')
+  @UseGuards(RideParticipantGuard)
   @ApiOperation({ summary: 'ETA + distance (cached 30s)' })
   @ApiOkResponse({ type: EtaDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })

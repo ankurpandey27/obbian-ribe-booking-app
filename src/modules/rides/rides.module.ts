@@ -5,6 +5,7 @@ import { RidesService } from './services/rides.service';
 import { FraudService } from './services/fraud.service';
 import { ScheduledRidesService } from './services/scheduled-rides.service';
 import { ScheduledRidesWorker } from './workers/scheduled-rides.worker';
+import { RideParticipantGuard } from './guards/ride-participant.guard';
 import { Ride } from './entities/ride.entity';
 import { ScheduledRide } from './entities/scheduled-ride.entity';
 import { PricingModule } from '../pricing/pricing.module';
@@ -24,7 +25,8 @@ import { DriversModule } from '../drivers/drivers.module';
     FraudService,
     ScheduledRidesService,
     ScheduledRidesWorker,
+    RideParticipantGuard,
   ],
-  exports: [RidesService],
+  exports: [RidesService, RideParticipantGuard],
 })
 export class RidesModule {}

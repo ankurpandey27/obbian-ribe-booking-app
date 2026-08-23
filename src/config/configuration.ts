@@ -153,6 +153,12 @@ export const notificationsConfig = registerAs('notifications', () => ({
   fromEmail: process.env.NOTIFICATIONS_FROM_EMAIL,
 }));
 
+export const securityConfig = registerAs('security', () => ({
+  // Comma-separated browser origins allowed by CORS. Empty = deny browsers.
+  // Mobile apps (Flutter) send no Origin header and are unaffected.
+  corsOrigins: process.env.CORS_ORIGINS || '',
+}));
+
 export const configFactory = [
   serverConfig,
   databaseConfig,
@@ -171,4 +177,5 @@ export const configFactory = [
   analyticsConfig,
   throttleConfig,
   notificationsConfig,
+  securityConfig,
 ];

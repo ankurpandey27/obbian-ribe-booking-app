@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -134,23 +135,36 @@ export class RidesService {
     const ride = await this.getRide(rideId);
     RideStateMachine.assertTransition(ride.status, to);
 
-    await this.rideRepo.update(rideId, { ...patch, status: to });
-    const updated = await this.getRide(rideId);
+    // Conditional update keyed on the observed status: two concurrent
+    // transitions race on the DB, not in memory — exactly one wins,
+    // the loser gets a Conflict instead of silently double-applying.
+    const result = await this.rideRepo.update(
+      { id: rideId, status: ride.status },
+      { ...patch, status: to },
+    );
+    if (!result.affected) {
+      throw new ConflictException(
+        `Ride ${rideId} changed concurrently (was ${ride.status})`,
+      );
+    }
+
+    // Merge locally — avoids a re-fetch round-trip per transition.
+    const updated: Ride = { ...ride, ...patch, status: to };
 
     await this.events.publishRide(
       eventType,
       {
-        rideId: ride.id,
-        riderId: ride.riderId,
-        driverId: ride.driverId,
+        rideId: updated.id,
+        riderId: updated.riderId,
+        driverId: updated.driverId,
         status: updated.status,
-        rideType: ride.rideType,
+        rideType: updated.rideType,
         totalFare: updated.totalFare ? Number(updated.totalFare) : undefined,
         cancellationReason: updated.cancellationReason,
         cancellationFee: Number(updated.cancellationFee),
         occurredAt: new Date().toISOString(),
       },
-      ride.id,
+      updated.id,
     );
 
     return updated;
@@ -183,9 +197,10 @@ export class RidesService {
       completedAt: new Date(),
     });
 
-    // Driver back to ONLINE + matchable at the pickup point.
+    // Driver back ONLINE + matchable at pickup. Self-healing side effect —
+    // must not add latency to the driver's completion response.
     if (ride.driverId) {
-      await this.drivers
+      void this.drivers
         .completeRide(ride.driverId, ride.pickupLat, ride.pickupLon)
         .catch((err) =>
           this.logger.error(
