@@ -14,6 +14,10 @@ import {
   RideTypeValue,
 } from '../../../shared/types/common';
 
+@Index('idx_rides_rider_status_created', {
+  synchronize: false,
+})
+@Index('idx_rides_driver_status_created', { synchronize: false })
 @Entity('rides')
 export class Ride {
   @PrimaryGeneratedColumn('uuid')

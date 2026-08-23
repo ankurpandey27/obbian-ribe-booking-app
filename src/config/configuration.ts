@@ -159,6 +159,13 @@ export const securityConfig = registerAs('security', () => ({
   corsOrigins: process.env.CORS_ORIGINS || '',
 }));
 
+export const eventsConfig = registerAs('events', () => ({
+  // true = outbox relay publishes to Kafka; false = brokerless mode
+  // (outbox rows drain locally — free-tier deploys without Kafka).
+  brokerEnabled: (process.env.EVENTS_BROKER_ENABLED ?? 'false') === 'true',
+  maxAttempts: parseInt(process.env.EVENTS_MAX_ATTEMPTS || '8', 10),
+}));
+
 export const configFactory = [
   serverConfig,
   databaseConfig,
@@ -178,4 +185,5 @@ export const configFactory = [
   throttleConfig,
   notificationsConfig,
   securityConfig,
+  eventsConfig,
 ];

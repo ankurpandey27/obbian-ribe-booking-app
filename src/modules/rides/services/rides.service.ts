@@ -5,13 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Ride } from '../entities/ride.entity';
 import { RideStateMachine } from '../state-machine/ride-state-machine';
-import { EventBus } from '../../../common/events/event-bus.service';
+import { OutboxService } from '../../../common/events/outbox.service';
+import { TOPICS } from '../../../shared/events/topics';
 import { RideEventType } from '../../../shared/events/contracts';
 import { QUEUE_MATCHING } from '../../../common/queues/queues.module';
 import { PricingService } from '../../pricing/services/pricing.service';
@@ -40,8 +41,8 @@ export interface RequestRideInput {
 
 /**
  * RidesService — ride lifecycle owner. Every transition goes through
- * the state machine and publishes a ride event. Matching/payments/
- * tracking consume these events; they never mutate ride state directly.
+ * the state machine and is committed together with its outbox event
+ * (atomic durability — no state change can exist without its event).
  */
 @Injectable()
 export class RidesService {
@@ -49,28 +50,31 @@ export class RidesService {
 
   constructor(
     @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
-    private readonly events: EventBus,
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly outbox: OutboxService,
     private readonly pricing: PricingService,
     private readonly drivers: DriversService,
     @InjectQueue(QUEUE_MATCHING) private readonly matchingQueue: Queue,
   ) {}
 
   async createRide(input: RequestRideInput): Promise<Ride> {
-    const ride = await this.rideRepo.save({
-      ...input,
-      status: 'REQUESTED',
+    const ride = await this.dataSource.transaction(async (em) => {
+      const saved = await em.save(Ride, { ...input, status: 'REQUESTED' });
+      await this.outbox.write(em, {
+        topic: TOPICS.RIDE_EVENTS,
+        type: RideEventType.RIDE_REQUESTED,
+        aggregateType: 'ride',
+        aggregateId: saved.id,
+        payload: {
+          rideId: saved.id,
+          riderId: saved.riderId,
+          status: saved.status,
+          rideType: saved.rideType,
+          occurredAt: new Date().toISOString(),
+        },
+      });
+      return saved;
     });
-    await this.events.publishRide(
-      RideEventType.RIDE_REQUESTED,
-      {
-        rideId: ride.id,
-        riderId: ride.riderId,
-        status: ride.status,
-        rideType: ride.rideType,
-        occurredAt: new Date().toISOString(),
-      },
-      ride.id,
-    );
 
     // Kick off driver dispatch off the HTTP path. jobId = idempotent per ride.
     await this.matchingQueue
@@ -135,37 +139,42 @@ export class RidesService {
     const ride = await this.getRide(rideId);
     RideStateMachine.assertTransition(ride.status, to);
 
-    // Conditional update keyed on the observed status: two concurrent
-    // transitions race on the DB, not in memory — exactly one wins,
-    // the loser gets a Conflict instead of silently double-applying.
-    const result = await this.rideRepo.update(
-      { id: rideId, status: ride.status },
-      { ...patch, status: to },
-    );
-    if (!result.affected) {
-      throw new ConflictException(
-        `Ride ${rideId} changed concurrently (was ${ride.status})`,
+    // One transaction: conditional state update + durable outbox event.
+    // The update is keyed on the observed status — two concurrent
+    // transitions race on the DB row, exactly one wins, the loser gets a
+    // Conflict instead of silently double-applying.
+    const updated = await this.dataSource.transaction(async (em) => {
+      const result = await em.update(
+        Ride,
+        { id: rideId, status: ride.status },
+        { ...patch, status: to },
       );
-    }
+      if (!result.affected) {
+        throw new ConflictException(
+          `Ride ${rideId} changed concurrently (was ${ride.status})`,
+        );
+      }
 
-    // Merge locally — avoids a re-fetch round-trip per transition.
-    const updated: Ride = { ...ride, ...patch, status: to };
-
-    await this.events.publishRide(
-      eventType,
-      {
-        rideId: updated.id,
-        riderId: updated.riderId,
-        driverId: updated.driverId,
-        status: updated.status,
-        rideType: updated.rideType,
-        totalFare: updated.totalFare ? Number(updated.totalFare) : undefined,
-        cancellationReason: updated.cancellationReason,
-        cancellationFee: Number(updated.cancellationFee),
-        occurredAt: new Date().toISOString(),
-      },
-      updated.id,
-    );
+      const merged: Ride = { ...ride, ...patch, status: to };
+      await this.outbox.write(em, {
+        topic: TOPICS.RIDE_EVENTS,
+        type: eventType,
+        aggregateType: 'ride',
+        aggregateId: merged.id,
+        payload: {
+          rideId: merged.id,
+          riderId: merged.riderId,
+          driverId: merged.driverId,
+          status: merged.status,
+          rideType: merged.rideType,
+          totalFare: merged.totalFare ? Number(merged.totalFare) : undefined,
+          cancellationReason: merged.cancellationReason,
+          cancellationFee: Number(merged.cancellationFee),
+          occurredAt: new Date().toISOString(),
+        },
+      });
+      return merged;
+    });
 
     return updated;
   }
