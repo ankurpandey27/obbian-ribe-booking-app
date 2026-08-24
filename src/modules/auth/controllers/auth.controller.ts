@@ -6,6 +6,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from '../services/auth.service';
 import { Public } from '../../../common/auth/decorators';
 import {
@@ -19,6 +20,11 @@ import {
 } from '../dto/auth.dto';
 import { ApiErrorDto } from '../../../common/dto/api-error';
 
+/**
+ * Auth endpoints are the brute-force surface (OTP guessing, token stuffing).
+ * Strict per-IP limits OVERRIDE the global throttle on these routes:
+ * send-otp: 3/10min, verify-otp: 5/10min, refresh: 10/min.
+ */
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -27,6 +33,7 @@ export class AuthController {
   @Public()
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 600_000 } })
   @ApiOperation({ summary: 'Send OTP to phone (cooldown enforced)' })
   @ApiOkResponse({ type: SendOtpResultDto })
   @ApiBadRequestResponse({ type: ApiErrorDto, description: 'Invalid phone' })
@@ -37,6 +44,7 @@ export class AuthController {
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
   @ApiOperation({ summary: 'Verify OTP → access + refresh tokens' })
   @ApiOkResponse({ type: AuthResponseDto })
   @ApiBadRequestResponse({
@@ -50,6 +58,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Rotate refresh token → new token pair' })
   @ApiOkResponse({ type: AuthResponseDto })
   @ApiUnauthorizedResponse({

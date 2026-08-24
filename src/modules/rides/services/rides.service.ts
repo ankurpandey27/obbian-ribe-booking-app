@@ -18,6 +18,9 @@ import { TOPICS } from '../../../shared/events/topics';
 import { RideEventType } from '../../../shared/events/contracts';
 import { QUEUE_MATCHING } from '../../../common/queues/queues.module';
 import { PricingService } from '../../pricing/services/pricing.service';
+import { SurgeService } from '../../pricing/services/surge.service';
+import { PromosService } from '../../promos/services/promos.service';
+import { FraudService } from './fraud.service';
 import { DriversService } from '../../drivers/services/drivers.service';
 import {
   CancellationReasonValue,
@@ -55,8 +58,112 @@ export class RidesService {
     private readonly outbox: OutboxService,
     private readonly pricing: PricingService,
     private readonly drivers: DriversService,
+    private readonly fraudService: FraudService,
+    private readonly promos: PromosService,
+    private readonly surge: SurgeService,
     @InjectQueue(QUEUE_MATCHING) private readonly matchingQueue: Queue,
   ) {}
+
+  /**
+   * Full ride-request use case: fraud guard → quote → price lock →
+   * promo claim → create + outbox. Owns ALL request orchestration so the
+   * controller stays thin (Nest style rule: no business logic there).
+   */
+  async requestRide(
+    riderId: string,
+    dto: {
+      pickupLat: number;
+      pickupLon: number;
+      dropoffLat: number;
+      dropoffLon: number;
+      rideType: RideTypeValue;
+      city?: string;
+      promoCode?: string;
+    },
+  ): Promise<{
+    ride: Ride;
+    surgeMultiplier: number;
+    promoDiscount: number;
+    estimatedTime: number | undefined;
+  }> {
+    const city = dto.city ?? 'Delhi';
+
+    // Fraud guard, fare config and route quote are independent — fan out.
+    const [config, quote] = await Promise.all([
+      this.pricing.getConfig(city, dto.rideType),
+      this.pricing.getQuote(
+        dto.pickupLat,
+        dto.pickupLon,
+        dto.dropoffLat,
+        dto.dropoffLon,
+        city,
+        [dto.rideType],
+      ),
+      this.fraudService.guardRideRequest(
+        riderId,
+        dto.pickupLat,
+        dto.pickupLon,
+        city,
+      ),
+    ]);
+
+    const estimatedFare = this.pricing.calculateFare(
+      config,
+      quote.distanceKm,
+      quote.durationMin,
+    );
+    // Price lock = what the client saw in the quote (surge included).
+    const quotedOption = quote.options.find((o) => o.rideType === dto.rideType);
+    const lockedFare =
+      quotedOption && quote.surgeMultiplier ? quotedOption.fare : estimatedFare;
+
+    let promoDiscount = 0;
+    if (dto.promoCode) {
+      const promo = await this.promos.redeem(dto.promoCode, riderId);
+      promoDiscount = Math.min(
+        Math.round(((lockedFare * promo.discountPercent) / 100) * 2) / 2,
+        promo.maxDiscount,
+      );
+    }
+
+    let ride: Ride;
+    try {
+      ride = await this.createRide({
+        riderId,
+        pickupLat: dto.pickupLat,
+        pickupLon: dto.pickupLon,
+        dropoffLat: dto.dropoffLat,
+        dropoffLon: dto.dropoffLon,
+        rideType: dto.rideType,
+        city,
+        estimatedFare: lockedFare,
+        distanceKm: quote.distanceKm,
+        durationMin: Math.max(0, Math.round(quote.durationMin ?? 0)),
+        surgeMultiplier:
+          quote.surgeMultiplier ?? Number(config.surgeMultiplier),
+        promoCode: dto.promoCode,
+        promoDiscount,
+      });
+    } catch (err) {
+      if (dto.promoCode) {
+        await this.promos
+          .release(dto.promoCode, riderId)
+          .catch(() => undefined);
+      }
+      throw err;
+    }
+
+    void this.surge
+      .recordDemand(city, dto.pickupLat, dto.pickupLon)
+      .catch(() => undefined);
+
+    return {
+      ride,
+      surgeMultiplier: Number(ride.surgeMultiplier),
+      promoDiscount,
+      estimatedTime: quote.durationMin,
+    };
+  }
 
   async createRide(input: RequestRideInput): Promise<Ride> {
     const ride = await this.db.transaction(async (tx) => {

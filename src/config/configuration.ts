@@ -44,12 +44,23 @@ export const kafkaConfig = registerAs('kafka', () => ({
   groupId: process.env.KAFKA_GROUP_ID || 'ride-booking-backend',
 }));
 
-export const jwtConfig = registerAs('jwt', () => ({
-  accessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret',
-  refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
-  accessTtl: parseInt(process.env.JWT_ACCESS_TTL || '900', 10),
-  refreshTtl: parseInt(process.env.JWT_REFRESH_TTL || '2592000', 10),
-}));
+export const jwtConfig = registerAs('jwt', () => {
+  const accessSecret = process.env.JWT_ACCESS_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET;
+  const env = process.env.NODE_ENV || 'development';
+  // Fail fast rather than run production on known defaults.
+  if (env === 'production' && (!accessSecret || !refreshSecret)) {
+    throw new Error(
+      'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET are REQUIRED in production',
+    );
+  }
+  return {
+    accessSecret: accessSecret || 'dev-access-secret',
+    refreshSecret: refreshSecret || 'dev-refresh-secret',
+    accessTtl: parseInt(process.env.JWT_ACCESS_TTL || '900', 10),
+    refreshTtl: parseInt(process.env.JWT_REFRESH_TTL || '2592000', 10),
+  };
+});
 
 export const otpConfig = registerAs('otp', () => ({
   provider: process.env.OTP_PROVIDER || 'dev',

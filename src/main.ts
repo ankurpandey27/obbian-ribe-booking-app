@@ -59,6 +59,20 @@ async function bootstrap() {
   });
   app.enableShutdownHooks();
 
+  // OpenAPI docs — dev/staging convenience, never exposed in production.
+  if (config.get<string>('server.env') !== 'production') {
+    buildSwagger(app, apiPrefix);
+  }
+
+  const port = config.get<number>('server.port', 3000);
+  await app.listen(port);
+  console.log(
+    `🚕 Ride backend listening on http://localhost:${port}/${apiPrefix}`,
+  );
+}
+
+/** Builds and mounts Swagger UI (non-production only). */
+function buildSwagger(app: NestExpressApplication, apiPrefix: string): void {
   // OpenAPI docs at /api/v1/docs
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Obbian Ride Booking API')
@@ -98,11 +112,6 @@ async function bootstrap() {
     },
     customSiteTitle: 'Obbian Ride Booking API',
   });
-
-  const port = config.get<number>('server.port', 3000);
-  await app.listen(port);
-  console.log(
-    `🚕 Ride backend listening on http://localhost:${port}/${apiPrefix}`,
-  );
 }
+
 void bootstrap();

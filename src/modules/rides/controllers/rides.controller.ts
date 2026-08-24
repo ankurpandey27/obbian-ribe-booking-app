@@ -26,10 +26,6 @@ import {
 } from '@nestjs/swagger';
 import { RidesService } from '../services/rides.service';
 import { RideParticipantGuard } from '../guards/ride-participant.guard';
-import { PricingService } from '../../pricing/services/pricing.service';
-import { PromosService } from '../../promos/services/promos.service';
-import { SurgeService } from '../../pricing/services/surge.service';
-import { FraudService } from '../services/fraud.service';
 import { ScheduledRidesService } from '../services/scheduled-rides.service';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { JwtPayload } from '../../auth/services/token.service';
@@ -59,10 +55,6 @@ import { ApiErrorDto } from '../../../common/dto/api-error';
 export class RidesController {
   constructor(
     private readonly ridesService: RidesService,
-    private readonly pricingService: PricingService,
-    private readonly promosService: PromosService,
-    private readonly surgeService: SurgeService,
-    private readonly fraudService: FraudService,
     private readonly scheduledRidesService: ScheduledRidesService,
   ) {}
 
@@ -80,86 +72,16 @@ export class RidesController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: RequestRideDto,
   ) {
-    const city = dto.city ?? 'Delhi';
-
-    // Fraud guard, fare config and route quote are independent — fan out.
-    const [config, quote] = await Promise.all([
-      this.pricingService.getConfig(city, dto.rideType),
-      this.pricingService.getQuote(
-        dto.pickupLat,
-        dto.pickupLon,
-        dto.dropoffLat,
-        dto.dropoffLon,
-        city,
-        [dto.rideType],
-      ),
-      this.fraudService.guardRideRequest(
-        user.sub,
-        dto.pickupLat,
-        dto.pickupLon,
-        city,
-      ),
-    ]);
-
-    const estimatedFare = this.pricingService.calculateFare(
-      config,
-      quote.distanceKm,
-      quote.durationMin,
-    );
-    // Price lock = what the client saw in the quote (surge included).
-    const quotedOption = quote.options.find((o) => o.rideType === dto.rideType);
-    const lockedFare =
-      quotedOption && quote.surgeMultiplier ? quotedOption.fare : estimatedFare;
-
-    // Promo redeemed atomically at request time; discount locks with the fare.
-    let promoDiscount = 0;
-    if (dto.promoCode) {
-      const promo = await this.promosService.redeem(dto.promoCode, user.sub);
-      promoDiscount = Math.min(
-        Math.round(((lockedFare * promo.discountPercent) / 100) * 2) / 2,
-        promo.maxDiscount,
-      );
-    }
-
-    let ride;
-    try {
-      ride = await this.ridesService.createRide({
-        riderId: user.sub,
-        pickupLat: dto.pickupLat,
-        pickupLon: dto.pickupLon,
-        dropoffLat: dto.dropoffLat,
-        dropoffLon: dto.dropoffLon,
-        rideType: dto.rideType,
-        city,
-        estimatedFare: lockedFare,
-        distanceKm: quote.distanceKm,
-        durationMin: Math.max(0, Math.round(quote.durationMin ?? 0)),
-        surgeMultiplier:
-          quote.surgeMultiplier ?? Number(config.surgeMultiplier),
-        promoCode: dto.promoCode,
-        promoDiscount,
-      });
-    } catch (err) {
-      // Ride failed after claiming the promo — give the use back.
-      if (dto.promoCode) {
-        await this.promosService
-          .release(dto.promoCode, user.sub)
-          .catch(() => undefined);
-      }
-      throw err;
-    }
-    // Demand signal for the surge engine, per pickup cell (best effort).
-    void this.surgeService
-      .recordDemand(city, dto.pickupLat, dto.pickupLon)
-      .catch(() => undefined);
+    const { ride, promoDiscount, estimatedTime } =
+      await this.ridesService.requestRide(user.sub, dto);
 
     return {
       rideId: ride.id,
       estimatedFare: Number(ride.estimatedFare),
-      surgeMultiplier: ride.surgeMultiplier,
+      surgeMultiplier: Number(ride.surgeMultiplier),
       promoDiscount,
       payableFare: Number(ride.estimatedFare) - promoDiscount,
-      estimatedTime: quote.durationMin,
+      estimatedTime,
       status: ride.status,
       driverId: ride.driverId ?? null,
     };

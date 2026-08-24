@@ -37,9 +37,10 @@ describe('drizzle schema integrity', () => {
   it.each(tables)(
     '%s: every column has a non-empty DB name',
     (_name, table) => {
-      const cols = getTableColumns(
-        table as never,
-      ) as unknown as Record<string, { name: string }>;
+      const cols = getTableColumns(table as never) as unknown as Record<
+        string,
+        { name: string }
+      >;
       const bad = Object.entries(cols)
         .filter(([, c]) => !c.name || c.name.trim() === '')
         .map(([key]) => key);
