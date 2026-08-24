@@ -1,9 +1,14 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { eq } from 'drizzle-orm';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import { users } from '../../../common/database/schema';
 import { QUEUE_NOTIFICATIONS } from '../../../common/queues/queues.module';
 import { NotificationChannel, NotificationType } from './notifications.service';
 import { User } from '../../users/entities/user.entity';
@@ -31,7 +36,7 @@ export class NotificationWorker extends WorkerHost {
   private readonly sms: SmsProvider;
 
   constructor(
-    @InjectRepository(User) private readonly users: Repository<User>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     config: ConfigService,
   ) {
     super();
@@ -102,7 +107,7 @@ export class NotificationWorker extends WorkerHost {
 
   private async dispatchSms(userId: string, body: string): Promise<void> {
     try {
-      const user = await this.users.findOneBy({ id: userId });
+      const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!user?.phoneNumber) {
         this.logger.warn(`[sms-skip] → ${userId}: no phone on file`);
         return;
@@ -127,7 +132,7 @@ export class NotificationWorker extends WorkerHost {
       return;
     }
     try {
-      const user = await this.users.findOneBy({ id: userId });
+      const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!user?.email) {
         this.logger.warn(`[email-skip] → ${userId}: no email on file`);
         return;

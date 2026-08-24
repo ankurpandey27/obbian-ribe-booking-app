@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
-import { Ride } from '../../rides/entities/ride.entity';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, count, eq, gte } from 'drizzle-orm';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { drivers as driversTable, rides as ridesTable } from '../../../common/database/schema';
 
 export interface AnalyticsSummary {
   from: string;
@@ -30,29 +30,29 @@ export interface AnalyticsSummary {
 @Injectable()
 export class AnalyticsService {
   constructor(
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
   ) {}
 
   async summary(days = 30): Promise<AnalyticsSummary> {
     const to = new Date();
     const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const rides = await this.rideRepo.find({
-      where: { createdAt: MoreThanOrEqual(from) },
-      select: [
-        'id',
-        'status',
-        'totalFare',
-        'estimatedFare',
-        'riderRating',
-        'driverRating',
-        'createdAt',
-        'pickupLat',
-        'pickupLon',
-        'dropoffLat',
-        'dropoffLon',
-      ],
-    });
+    const rides = await this.db
+      .select({
+        id: ridesTable.id,
+        status: ridesTable.status,
+        totalFare: ridesTable.totalFare,
+        estimatedFare: ridesTable.estimatedFare,
+        riderRating: ridesTable.riderRating,
+        driverRating: ridesTable.driverRating,
+        createdAt: ridesTable.createdAt,
+        pickupLat: ridesTable.pickupLat,
+        pickupLon: ridesTable.pickupLon,
+        dropoffLat: ridesTable.dropoffLat,
+        dropoffLon: ridesTable.dropoffLon,
+      })
+      .from(ridesTable)
+      .where(gte(ridesTable.createdAt, from));
 
     if (rides.length === 0) {
       throw new NotFoundException('No ride data in the selected window');
@@ -99,14 +99,15 @@ export class AnalyticsService {
       statuses.map((s) => [s, rides.filter((r) => r.status === s).length]),
     );
 
-    const { totalDrivers } = await this.rideRepo.manager
-      .query(`SELECT (SELECT count(*) FROM drivers)::int AS "totalDrivers"`)
-      .then(
-        (rows: { totalDrivers: number }[]) => rows[0] ?? { totalDrivers: 0 },
-      );
-    const onlineNow = await this.rideRepo.manager
-      .query(`SELECT count(*)::int AS n FROM drivers WHERE status = 'ONLINE'`)
-      .then((rows: { n: number }[]) => rows[0]?.n ?? 0);
+    const [totalsRow] = await this.db
+      .select({ value: count() })
+      .from(driversTable);
+    const [onlineRow] = await this.db
+      .select({ value: count() })
+      .from(driversTable)
+      .where(eq(driversTable.status, 'ONLINE'));
+    const totalDrivers = Number(totalsRow?.value ?? 0);
+    const onlineNow = Number(onlineRow?.value ?? 0);
 
     return {
       from: from.toISOString(),

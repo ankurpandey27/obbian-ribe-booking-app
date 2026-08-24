@@ -1,9 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
-import { Driver } from '../../drivers/entities/driver.entity';
-import { Ride } from '../../rides/entities/ride.entity';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { drivers, rides } from '../../../common/database/schema';
 
 /**
  * RatingsService — aggregate user/driver ratings from completed rides.
@@ -11,19 +9,21 @@ import { Ride } from '../../rides/entities/ride.entity';
  */
 @Injectable()
 export class RatingsService {
-  constructor(
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
-    @InjectRepository(Driver) private readonly driverRepo: Repository<Driver>,
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
-  ) {}
+  constructor(@Inject(DRIZZLE_DB) private readonly db: DrizzleDB) {}
 
   async getAggregate(userId: string, role: 'RIDER' | 'DRIVER') {
-    const rides =
+    const rows =
       role === 'RIDER'
-        ? await this.rideRepo.findBy({ riderId: userId })
-        : await this.rideRepo.findBy({ driverId: userId });
+        ? await this.db
+            .select({ driverRating: rides.driverRating })
+            .from(rides)
+            .where(eq(rides.riderId, userId))
+        : await this.db
+            .select({ riderRating: rides.riderRating })
+            .from(rides)
+            .where(eq(rides.driverId, userId));
 
-    const ratings = rides
+    const ratings = rows
       .map((r) => (role === 'RIDER' ? r.driverRating : r.riderRating))
       .filter((r): r is number => r != null);
 
@@ -36,9 +36,19 @@ export class RatingsService {
     }));
 
     if (role === 'DRIVER') {
-      const driver = await this.driverRepo.findOneBy({ userId });
+      const [driver] = await this.db
+        .select()
+        .from(drivers)
+        .where(eq(drivers.userId, userId))
+        .limit(1);
       if (!driver) throw new NotFoundException('Driver not found');
-      await this.driverRepo.update(userId, { rating: average });
+      await this.db
+        .update(drivers)
+        .set({
+          rating: Math.round(average * 100) / 100,
+          updatedAt: new Date(),
+        })
+        .where(eq(drivers.userId, userId));
     }
 
     return {

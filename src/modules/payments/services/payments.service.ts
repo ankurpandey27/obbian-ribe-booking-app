@@ -4,8 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Inject } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import { payments as paymentsTable, rides as ridesTable } from '../../../common/database/schema';
 import { ConfigService } from '@nestjs/config';
 import Razorpay from 'razorpay';
 import { Payment } from '../entities/payment.entity';
@@ -29,9 +34,7 @@ export class PaymentsService {
   private readonly razorpay: Razorpay | null;
 
   constructor(
-    @InjectRepository(Payment)
-    private readonly paymentRepo: Repository<Payment>,
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly events: EventBus,
     private readonly config: ConfigService,
     @InjectQueue(QUEUE_PAYMENTS) private readonly paymentQueue: Queue,
@@ -51,18 +54,19 @@ export class PaymentsService {
     amount: number,
     method: PaymentMethodValue = 'UPI',
   ) {
-    const existing = await this.paymentRepo.findOneBy({ rideId });
+    const [existing] = await this.db
+      .select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.rideId, rideId))
+      .limit(1);
     if (existing) {
       throw new BadRequestException('Payment already initiated for this ride');
     }
 
-    const payment = await this.paymentRepo.save({
-      rideId,
-      userId,
-      amount,
-      method,
-      status: 'PENDING',
-    });
+    const [payment] = await this.db
+      .insert(paymentsTable)
+      .values({ rideId, userId, amount, method, status: 'PENDING' })
+      .returning();
 
     await this.paymentQueue.add(
       'create-order',
@@ -104,10 +108,10 @@ export class PaymentsService {
       notes: { rideId: data.rideId },
     });
 
-    await this.paymentRepo.update(data.paymentId, {
-      gatewayOrderId: order.id,
-      status: 'PROCESSING',
-    });
+    await this.db
+      .update(paymentsTable)
+      .set({ gatewayOrderId: order.id, status: 'PROCESSING', updatedAt: new Date() })
+      .where(eq(paymentsTable.id, data.paymentId));
 
     return order;
   }
@@ -119,7 +123,11 @@ export class PaymentsService {
     razorpayPaymentId: string,
     signature: string,
   ) {
-    const payment = await this.paymentRepo.findOneBy({ rideId });
+    const [payment] = await this.db
+      .select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.rideId, rideId))
+      .limit(1);
     if (!payment || payment.gatewayOrderId !== razorpayOrderId) {
       throw new NotFoundException('Payment record not found');
     }
@@ -140,12 +148,21 @@ export class PaymentsService {
       throw new BadRequestException('Invalid payment signature');
     }
 
-    await this.paymentRepo.update(payment.id, {
-      status: 'COMPLETED',
-      gatewayPaymentId: razorpayPaymentId,
-      paidAt: new Date(),
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(paymentsTable)
+        .set({
+          status: 'COMPLETED',
+          gatewayPaymentId: razorpayPaymentId,
+          paidAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentsTable.id, payment.id));
+      await tx
+        .update(ridesTable)
+        .set({ paymentStatus: 'COMPLETED' })
+        .where(eq(ridesTable.id, rideId));
     });
-    await this.rideRepo.update(rideId, { paymentStatus: 'COMPLETED' });
 
     await this.events.publish(
       TOPICS.PAYMENT_EVENTS,
@@ -188,22 +205,35 @@ export class PaymentsService {
     const rideId = entity?.notes?.ride_id;
     if (!rideId) return { received: true };
 
-    const payment = await this.paymentRepo.findOneBy({ rideId });
+    const [payment] = await this.db
+      .select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.rideId, rideId))
+      .limit(1);
     if (!payment) return { received: true };
 
     const event = payload.event;
     if (event === 'payment.captured' || event === 'payment.authorized') {
-      await this.paymentRepo.update(payment.id, {
-        status: 'COMPLETED',
-        paidAt: new Date(),
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(paymentsTable)
+          .set({ status: 'COMPLETED', paidAt: new Date(), updatedAt: new Date() })
+          .where(eq(paymentsTable.id, payment.id));
+        await tx
+          .update(ridesTable)
+          .set({ paymentStatus: 'COMPLETED' })
+          .where(eq(ridesTable.id, rideId));
       });
-      await this.rideRepo.update(rideId, { paymentStatus: 'COMPLETED' });
     } else if (event === 'payment.failed') {
-      await this.paymentRepo.update(payment.id, {
-        status: 'FAILED',
-        failureReason: (entity as Record<string, unknown>)
-          ?.error_description as string,
-      });
+      await this.db
+        .update(paymentsTable)
+        .set({
+          status: 'FAILED',
+          failureReason: (entity as Record<string, unknown>)
+            ?.error_description as string,
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentsTable.id, payment.id));
       await this.events.publish(
         TOPICS.PAYMENT_EVENTS,
         PaymentEventType.PAYMENT_FAILED,
@@ -223,13 +253,21 @@ export class PaymentsService {
   }
 
   async getPayment(rideId: string) {
-    const payment = await this.paymentRepo.findOneBy({ rideId });
+    const [payment] = await this.db
+      .select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.rideId, rideId))
+      .limit(1);
     if (!payment) throw new NotFoundException('Payment not found');
     return payment;
   }
 
   async refund(rideId: string) {
-    const payment = await this.paymentRepo.findOneBy({ rideId });
+    const [payment] = await this.db
+      .select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.rideId, rideId))
+      .limit(1);
     if (!payment || payment.status !== 'COMPLETED') {
       throw new BadRequestException('Only completed payments can be refunded');
     }
@@ -241,11 +279,16 @@ export class PaymentsService {
       payment.gatewayPaymentId,
       {},
     );
-    await this.paymentRepo.update(payment.id, {
-      status: 'REFUNDED',
-      refundedAt: new Date(),
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(paymentsTable)
+        .set({ status: 'REFUNDED', refundedAt: new Date(), updatedAt: new Date() })
+        .where(eq(paymentsTable.id, payment.id));
+      await tx
+        .update(ridesTable)
+        .set({ paymentStatus: 'REFUNDED' })
+        .where(eq(ridesTable.id, rideId));
     });
-    await this.rideRepo.update(rideId, { paymentStatus: 'REFUNDED' });
 
     await this.events.publish(
       TOPICS.PAYMENT_EVENTS,

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { TrackingGateway } from './gateways/tracking.gateway';
 import { TrackingService } from './services/tracking.service';
 import { TrackingController } from './tracking.controller';
@@ -11,7 +10,6 @@ import { RidesModule } from '../rides/rides.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Ride]),
     AuthModule,
     MapsModule,
     RidesModule,

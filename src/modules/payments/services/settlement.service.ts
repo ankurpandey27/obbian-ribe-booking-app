@@ -1,11 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
+import { and, eq, gte } from 'drizzle-orm';
 import Razorpay from 'razorpay';
-import { Ride } from '../../rides/entities/ride.entity';
-import { Driver } from '../../drivers/entities/driver.entity';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import { drivers as driversTable, rides as ridesTable } from '../../../common/database/schema';
 
 export interface SettlementRecord {
   driverId: string;
@@ -34,8 +36,7 @@ export class SettlementService {
   private readonly razorpay: Razorpay | null;
 
   constructor(
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
-    @InjectRepository(Driver) private readonly driverRepo: Repository<Driver>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     config: ConfigService,
   ) {
     this.enabled = config.get<boolean>('settlement.enabled', true);
@@ -62,14 +63,17 @@ export class SettlementService {
     const since = new Date();
     since.setUTCHours(since.getUTCHours() - 24);
 
-    const rides = await this.rideRepo.find({
-      where: {
-        status: 'COMPLETED',
-        completedAt: MoreThanOrEqual(since),
-      },
-    });
+    const rides = await this.db
+      .select()
+      .from(ridesTable)
+      .where(
+        and(
+          eq(ridesTable.status, 'COMPLETED'),
+          gte(ridesTable.completedAt, since),
+        ),
+      );
 
-    const byDriver = new Map<string, Ride[]>();
+    const byDriver = new Map<string, typeof rides>();
     for (const r of rides) {
       if (!r.driverId) continue;
       const list = byDriver.get(r.driverId) ?? [];
@@ -87,10 +91,18 @@ export class SettlementService {
       const net = Math.round((gross - commission) * 100) / 100;
 
       // Credit wallet regardless of payout gateway availability.
-      const driver = await this.driverRepo.findOneBy({ userId: driverId });
-      await this.driverRepo.update(driverId, {
-        walletBalance: Number(driver?.walletBalance ?? 0) + net,
-      });
+      const [driver] = await this.db
+        .select()
+        .from(driversTable)
+        .where(eq(driversTable.userId, driverId))
+        .limit(1);
+      await this.db
+        .update(driversTable)
+        .set({
+          walletBalance: Number(driver?.walletBalance ?? 0) + net,
+          updatedAt: new Date(),
+        })
+        .where(eq(driversTable.userId, driverId));
 
       let payoutId: string | undefined;
       if (this.razorpay && this.payoutAccount && driver?.upiId) {

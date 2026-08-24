@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentsController } from './controllers/payments.controller';
 import { PaymentsService } from './services/payments.service';
 import { SettlementService } from './services/settlement.service';
@@ -10,7 +9,7 @@ import { Driver } from '../drivers/entities/driver.entity';
 import { RidesModule } from '../rides/rides.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Payment, Ride, Driver]), RidesModule],
+  imports: [RidesModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, SettlementService, PaymentProcessorWorker],
   exports: [PaymentsService],
