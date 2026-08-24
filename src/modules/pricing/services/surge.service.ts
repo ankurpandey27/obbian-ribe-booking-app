@@ -2,18 +2,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '../../../common/redis/redis.decorator';
 import { Redis } from 'ioredis';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Driver } from '../../drivers/entities/driver.entity';
+import { cellToLatLng, latLngToCell } from 'h3-js';
+import { GeoService } from '../../../common/redis/geo.service';
 
 /**
- * SurgeService — demand/supply dynamic pricing.
- * demand  = ride requests in the last N minutes (Redis counter).
- * supply  = ONLINE drivers in that city right now (DB count).
- * ratio   = demand / max(supply, 1).
- * multiplier climbs from 1.0 once ratio > demandThreshold, capped at
- * maxMultiplier, stepped by multiplierStep. Cached in Redis (TTL) so
- * every quote in the same window pays the same surge.
+ * Resolution 8 (~460m avg edge) — neighbourhood granularity. Demand and
+ * supply are aggregated per cell so a burst in one area never surges the
+ * whole city (the flaw of city-wide surge), mirroring Uber/Rapido practice.
+ */
+const SURGE_H3_RESOLUTION = 8;
+/** Supply = ONLINE drivers within this radius of the cell centre. */
+const SUPPLY_RADIUS_KM = 2.5;
+
+/**
+ * SurgeService — demand/supply dynamic pricing on H3 cells.
+ * demand  = ride requests in the last N minutes FOR THE CELL (Redis counter).
+ * supply  = drivers near the cell centre right now (geo index).
+ * ratio   = demand / max(supply, 1); multiplier climbs past demandThreshold,
+ * capped at maxMultiplier, stepped by multiplierStep. Cached per cell so
+ * every quote inside one cache window agrees.
  */
 @Injectable()
 export class SurgeService {
@@ -27,7 +34,7 @@ export class SurgeService {
 
   constructor(
     @InjectRedis() private readonly redis: Redis,
-    @InjectRepository(Driver) private readonly driverRepo: Repository<Driver>,
+    private readonly geo: GeoService,
     config: ConfigService,
   ) {
     this.enabled = config.get<boolean>('surge.enabled', false);
@@ -38,31 +45,42 @@ export class SurgeService {
     this.cacheTtlSeconds = config.get<number>('surge.cacheTtlSeconds', 60);
   }
 
-  /** Record one demand unit for a city (ride requested). */
-  async recordDemand(city: string): Promise<void> {
+  /** H3 cell index for a pickup point at the configured resolution. */
+  toCell(lat: number, lon: number): string {
+    return latLngToCell(lat, lon, SURGE_H3_RESOLUTION);
+  }
+
+  /** Record one demand unit for a pickup cell (ride requested). */
+  async recordDemand(city: string, lat: number, lon: number): Promise<void> {
     if (!this.enabled) return;
-    const key = `surge:demand:${city}`;
+    const key = `surge:demand:${city}:${this.toCell(lat, lon)}`;
     await this.redis.incr(key);
     await this.redis.expire(key, this.windowMinutes * 60);
   }
 
   /**
-   * Current surge multiplier for a city — 1.0 when disabled or calm.
-   * Cached so concurrent quotes agree within the cache window.
+   * Current surge multiplier for a pickup cell — 1.0 when disabled/calm.
+   * Cached per cell so concurrent quotes agree within the cache window.
    */
-  async getMultiplier(city: string): Promise<number> {
+  async getMultiplier(city: string, lat: number, lon: number): Promise<number> {
     if (!this.enabled) return 1.0;
 
-    const cacheKey = `surge:multiplier:${city}`;
+    const cell = this.toCell(lat, lon);
+    const cacheKey = `surge:multiplier:${city}:${cell}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return parseFloat(cached);
 
-    const [demandRaw, supplyRaw] = await Promise.all([
-      this.redis.get(`surge:demand:${city}`),
-      this.driverRepo.count({ where: { status: 'ONLINE' } }),
+    // Cell centroid as the supply probe — deterministic per cell, so all
+    // requests mapping to the same cell measure the same supply pool.
+    const [centerLat, centerLon] = cellToLatLng(cell);
+    const [demandRaw, supplyIds] = await Promise.all([
+      this.redis.get(`surge:demand:${city}:${cell}`),
+      this.geo
+        .findNearbyDriverIds(centerLon, centerLat, SUPPLY_RADIUS_KM, 500)
+        .catch(() => [] as string[]),
     ]);
     const demand = Number(demandRaw ?? 0);
-    const supply = Math.max(supplyRaw, 1);
+    const supply = Math.max(supplyIds.length, 1);
     const ratio = demand / supply;
 
     let multiplier = 1.0;

@@ -1,10 +1,12 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { drivers as driversTable, users } from '../../../common/database/schema';
 import { Driver } from '../entities/driver.entity';
 import { GeoService } from '../../../common/redis/geo.service';
 import { DriverStatusValue, RideTypeValue } from '../../../shared/types/common';
@@ -14,17 +16,25 @@ const HEARTBEAT_TTL_SECONDS = 90;
 
 /**
  * DriversService — driver profile + online status + live position.
- * Online state lives in Redis (geo index + heartbeat TTL); profile in DB.
- * Auto-offline: if a driver stops pinging for 90s they drop out of the
- * geo index — a dead driver can never be matched.
+ * Online state lives in Redis (geo index + heartbeat TTL); profile in DB
+ * via Drizzle. Auto-offline: heartbeat freshness is enforced at match
+ * time (findMatchableDrivers) — a dead driver can never be matched.
  */
 @Injectable()
 export class DriversService {
   constructor(
-    @InjectRepository(Driver) private readonly driverRepo: Repository<Driver>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly geo: GeoService,
-    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
+
+  private async findById(driverId: string) {
+    const [row] = await this.db
+      .select()
+      .from(driversTable)
+      .where(eq(driversTable.userId, driverId))
+      .limit(1);
+    return row;
+  }
 
   /**
    * Register driver profile + promote user role to DRIVER.
@@ -33,32 +43,37 @@ export class DriversService {
    * Client re-verifies OTP afterwards to pick up the DRIVER role in the JWT.
    */
   async register(userId: string, dto: RegisterDriverDto): Promise<Driver> {
-    const existing = await this.driverRepo.findOneBy({ userId });
+    const existing = await this.findById(userId);
     if (existing) {
       throw new ConflictException(
         'Driver profile already exists for this user',
       );
     }
 
-    return this.dataSource.transaction(async (em) => {
-      const driver = await em.save(Driver, {
-        userId,
-        licenseNumber: dto.licenseNumber,
-        vehicleRegistration: dto.vehicleRegistration,
-        vehicleModel: dto.vehicleModel,
-        vehicleColor: dto.vehicleColor,
-        vehicleType: dto.vehicleType,
-        upiId: dto.upiId,
-        status: 'OFFLINE',
-      });
-      // Parameterized update against the users table within the same tx.
-      await em.update('users', { id: userId }, { role: 'DRIVER' });
+    return this.db.transaction(async (tx) => {
+      const [driver] = await tx
+        .insert(driversTable)
+        .values({
+          userId,
+          licenseNumber: dto.licenseNumber,
+          vehicleRegistration: dto.vehicleRegistration,
+          vehicleModel: dto.vehicleModel,
+          vehicleColor: dto.vehicleColor,
+          vehicleType: dto.vehicleType,
+          upiId: dto.upiId,
+          status: 'OFFLINE',
+        })
+        .returning();
+      await tx
+        .update(users)
+        .set({ role: 'DRIVER', updatedAt: new Date() })
+        .where(eq(users.id, userId));
       return driver;
     });
   }
 
   async getProfile(driverId: string): Promise<Driver> {
-    const driver = await this.driverRepo.findOneBy({ userId: driverId });
+    const driver = await this.findById(driverId);
     if (!driver) throw new NotFoundException(`Driver ${driverId} not found`);
     return driver;
   }
@@ -68,10 +83,14 @@ export class DriversService {
     status: DriverStatusValue,
   ): Promise<void> {
     await this.getProfile(driverId);
-    await this.driverRepo.update(driverId, {
-      status,
-      onlineSince: status === 'ONLINE' ? new Date() : undefined,
-    });
+    await this.db
+      .update(driversTable)
+      .set({
+        status,
+        onlineSince: status === 'ONLINE' ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(driversTable.userId, driverId));
 
     if (status === 'OFFLINE' || status === 'ON_RIDE') {
       await this.geo.removeDriverPosition(driverId);
@@ -88,11 +107,15 @@ export class DriversService {
     lat: number,
     lon: number,
   ): Promise<void> {
-    await this.driverRepo.update(driverId, {
-      status: 'ONLINE',
-      onlineSince: new Date(),
-    });
-    await this.driverRepo.increment({ userId: driverId }, 'totalRides', 1);
+    await this.db
+      .update(driversTable)
+      .set({
+        status: 'ONLINE',
+        onlineSince: new Date(),
+        totalRides: sql`${driversTable.totalRides} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(driversTable.userId, driverId));
     await this.geo.upsertDriverPosition(driverId, lon, lat);
     await this.geo.cacheDriverPosition(driverId, lat, lon, Date.now());
     await this.setHeartbeat(driverId);
@@ -102,7 +125,6 @@ export class DriversService {
    * Live position update — refreshes geo index + heartbeat TTL.
    * Also writes the location cache the tracking service (REST fallback)
    * reads when the rider's socket is down.
-   * Only ONLINE or ON_RIDE drivers stay matchable.
    */
   async updateLocation(
     driverId: string,
@@ -117,11 +139,12 @@ export class DriversService {
       lon,
       timestamp ?? Date.now(),
     );
-    await this.driverRepo.update(driverId, {
-      lastLocationUpdateAt: new Date(),
-    });
+    await this.db
+      .update(driversTable)
+      .set({ lastLocationUpdateAt: new Date() })
+      .where(eq(driversTable.userId, driverId));
 
-    // Heartbeat TTL: expires → driver auto-removed from matchable pool.
+    // Heartbeat TTL: expires → driver excluded at match time (see below).
     await this.setHeartbeat(driverId);
   }
 
@@ -149,13 +172,17 @@ export class DriversService {
     const freshIds = await this.geo.filterFreshDrivers(geoIds);
     if (freshIds.length === 0) return [];
 
-    return this.driverRepo
-      .createQueryBuilder('d')
-      .where('d.userId IN (:...ids)', { ids: freshIds })
-      .andWhere('d.status = :status', { status: 'ONLINE' })
-      .andWhere('d.vehicleType = :vehicleType', { vehicleType })
-      .orderBy('d.rating', 'DESC')
-      .getMany();
+    return this.db
+      .select()
+      .from(driversTable)
+      .where(
+        and(
+          inArray(driversTable.userId, freshIds),
+          eq(driversTable.status, 'ONLINE'),
+          eq(driversTable.vehicleType, vehicleType),
+        ),
+      )
+      .orderBy(sql`${driversTable.rating} DESC`);
   }
 
   /** Validate a location ping is plausible (max 200 km/h vs last position). */

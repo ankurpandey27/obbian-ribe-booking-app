@@ -1,30 +1,38 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Promo } from '../entities/promo.entity';
+import { and, desc, eq } from 'drizzle-orm';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { promos } from '../../../common/database/schema';
 import { InjectRedis } from '../../../common/redis/redis.decorator';
 import { Redis } from 'ioredis';
 
 /**
- * PromosService — simple DB-backed promo validation (no engine).
- * Discount capped at maxDiscount; per-user usage capped via Redis counter.
+ * PromosService — DB-backed promo validation (no engine).
+ * Discount capped at maxDiscount; per-user usage claimed atomically via
+ * Redis INCR (see redeem). Reads go through Drizzle.
  */
 @Injectable()
 export class PromosService {
   constructor(
-    @InjectRepository(Promo) private readonly promoRepo: Repository<Promo>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     @InjectRedis() private readonly redis: Redis,
   ) {}
 
+  private async findActiveByCode(code: string) {
+    const [promo] = await this.db
+      .select()
+      .from(promos)
+      .where(and(eq(promos.code, code.toUpperCase()), eq(promos.isActive, true)))
+      .limit(1);
+    return promo;
+  }
+
   async validate(code: string, userId: string) {
-    const promo = await this.promoRepo.findOneBy({
-      code: code.toUpperCase(),
-      isActive: true,
-    });
+    const promo = await this.findActiveByCode(code);
     if (!promo) throw new NotFoundException('Invalid promo code');
 
     const now = new Date();
@@ -57,10 +65,7 @@ export class PromosService {
    * Throws when the per-user cap is already exhausted.
    */
   async redeem(code: string, userId: string) {
-    const promo = await this.promoRepo.findOneBy({
-      code: code.toUpperCase(),
-      isActive: true,
-    });
+    const promo = await this.findActiveByCode(code);
     if (!promo) throw new NotFoundException('Invalid promo code');
 
     const now = new Date();
@@ -96,9 +101,11 @@ export class PromosService {
    */
   async release(code: string, userId: string): Promise<void> {
     try {
-      const promo = await this.promoRepo.findOneBy({
-        code: code.toUpperCase(),
-      });
+      const [promo] = await this.db
+        .select()
+        .from(promos)
+        .where(eq(promos.code, code.toUpperCase()))
+        .limit(1);
       if (!promo) return;
       await this.redis.decr(`promo:${promo.id}:user:${userId}`);
     } catch {
@@ -107,12 +114,13 @@ export class PromosService {
   }
 
   async listAvailable() {
-    const promos = await this.promoRepo.find({
-      where: { isActive: true },
-      order: { createdAt: 'DESC' },
-      take: 10,
-    });
-    return promos.map((p) => ({
+    const rows = await this.db
+      .select()
+      .from(promos)
+      .where(eq(promos.isActive, true))
+      .orderBy(desc(promos.createdAt))
+      .limit(10);
+    return rows.map((p) => ({
       code: p.code,
       discountPercent: Number(p.discountPercent),
       maxDiscount: Number(p.maxDiscount),

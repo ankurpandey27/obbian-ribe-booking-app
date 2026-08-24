@@ -26,9 +26,6 @@ import {
   UserProfileDto,
 } from '../dto/users.dto';
 import { JwtPayload } from '../../auth/services/token.service';
-import { SavedLocation } from '../entities/saved-location.entity';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ApiErrorDto } from '../../../common/dto/api-error';
 
 @ApiTags('users')
@@ -39,11 +36,7 @@ import { ApiErrorDto } from '../../../common/dto/api-error';
 })
 @Controller('users')
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    @InjectRepository(SavedLocation)
-    private readonly savedRepo: Repository<SavedLocation>,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Get('profile')
   @ApiOperation({ summary: 'Get own profile' })
@@ -78,7 +71,7 @@ export class UsersController {
   @ApiOperation({ summary: 'List saved locations' })
   @ApiOkResponse({ type: SavedLocationListResultDto })
   async getSavedLocations(@CurrentUser() user: JwtPayload) {
-    const locations = await this.savedRepo.findBy({ userId: user.sub });
+    const locations = await this.usersService.listSavedLocations(user.sub);
     return { locations };
   }
 
@@ -90,7 +83,7 @@ export class UsersController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: SavedLocationDto,
   ) {
-    const saved = await this.savedRepo.save({ ...dto, userId: user.sub });
+    const saved = await this.usersService.saveLocation(user.sub, dto);
     return { saved };
   }
 }

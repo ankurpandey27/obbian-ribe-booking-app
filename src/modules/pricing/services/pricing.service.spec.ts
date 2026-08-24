@@ -15,6 +15,18 @@ function config(overrides: Partial<FareConfig> = {}): FareConfig {
   } as FareConfig;
 }
 
+/** Minimal Drizzle chain mock: select().from().where() [await | .limit()] */
+function drizzleMock(rows: unknown[]) {
+  const end = Object.assign(Promise.resolve(rows), {
+    limit: jest.fn(async () => rows),
+  });
+  const chain = {
+    from: jest.fn(() => chain),
+    where: jest.fn(() => end),
+  };
+  return { select: jest.fn(() => chain) };
+}
+
 function buildService(): PricingService {
   const service = new PricingService({} as never, {} as never, {} as never);
   return service;
@@ -49,15 +61,11 @@ describe('PricingService', () => {
 
   describe('quote options', () => {
     it('sorts options by base fare ascending', async () => {
-      const fareRepo = {
-        find: jest
-          .fn()
-          .mockResolvedValue([
-            config({ rideType: 'CABXL', baseFare: 90 }),
-            config({ rideType: 'CABX', baseFare: 60 }),
-            config({ rideType: 'AUTO', baseFare: 40 }),
-          ]),
-      };
+      const db = drizzleMock([
+        config({ rideType: 'CABXL', baseFare: 90 }),
+        config({ rideType: 'CABX', baseFare: 60 }),
+        config({ rideType: 'AUTO', baseFare: 40 }),
+      ]);
       const maps = {
         getRoute: jest.fn().mockResolvedValue({
           distanceKm: 10,
@@ -69,7 +77,7 @@ describe('PricingService', () => {
         getMultiplier: jest.fn().mockResolvedValue(1.0),
       };
       const service = new PricingService(
-        fareRepo as never,
+        db as never,
         maps as never,
         surge as never,
       );
@@ -90,9 +98,7 @@ describe('PricingService', () => {
     });
 
     it('applies dynamic surge to every option and records it', async () => {
-      const fareRepo = {
-        find: jest.fn().mockResolvedValue([config({})]),
-      };
+      const db = drizzleMock([config({})]);
       const maps = {
         getRoute: jest.fn().mockResolvedValue({
           distanceKm: 10,
@@ -104,7 +110,7 @@ describe('PricingService', () => {
         getMultiplier: jest.fn().mockResolvedValue(1.5),
       };
       const service = new PricingService(
-        fareRepo as never,
+        db as never,
         maps as never,
         surge as never,
       );
@@ -118,7 +124,7 @@ describe('PricingService', () => {
     });
 
     it('throws when no fare config exists for the city', async () => {
-      const fareRepo = { find: jest.fn().mockResolvedValue([]) };
+      const db = drizzleMock([]);
       const maps = {
         getRoute: jest.fn().mockResolvedValue({
           distanceKm: 10,
@@ -127,7 +133,7 @@ describe('PricingService', () => {
       };
       const surge = { getMultiplier: jest.fn().mockResolvedValue(1.0) };
       const service = new PricingService(
-        fareRepo as never,
+        db as never,
         maps as never,
         surge as never,
       );

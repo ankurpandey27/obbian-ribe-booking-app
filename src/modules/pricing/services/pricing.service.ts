@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { and, eq } from 'drizzle-orm';
 import { FareConfig } from '../entities/fare-config.entity';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { fareConfigs } from '../../../common/database/schema';
 import { MapsService } from '../../maps/services/maps.service';
 import { SurgeService } from './surge.service';
 import { RideTypeValue } from '../../../shared/types/common';
@@ -61,8 +62,7 @@ export class QuoteResult {
 @Injectable()
 export class PricingService {
   constructor(
-    @InjectRepository(FareConfig)
-    private readonly fareRepo: Repository<FareConfig>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly maps: MapsService,
     private readonly surge: SurgeService,
   ) {}
@@ -83,9 +83,10 @@ export class PricingService {
     );
     const types = rideTypes?.length ? rideTypes : undefined;
 
-    const allConfigs = await this.fareRepo.find({
-      where: { city, isActive: true },
-    });
+    const allConfigs = await this.db
+      .select()
+      .from(fareConfigs)
+      .where(and(eq(fareConfigs.city, city), eq(fareConfigs.isActive, true)));
     const configs = types
       ? allConfigs.filter((c) => types.includes(c.rideType))
       : allConfigs;
@@ -103,8 +104,12 @@ export class PricingService {
         surgeMultiplier: Number(c.surgeMultiplier),
       }));
 
-    // Dynamic surge layered on top of the config multiplier.
-    const surgeMultiplier = await this.surge.getMultiplier(city);
+    // Dynamic surge layered on top of the config multiplier (per pickup cell).
+    const surgeMultiplier = await this.surge.getMultiplier(
+      city,
+      pickupLat,
+      pickupLon,
+    );
     if (surgeMultiplier > 1.0) {
       for (const option of options) {
         option.fare = this.applySurge(option.fare, surgeMultiplier);
@@ -142,11 +147,17 @@ export class PricingService {
   }
 
   async getConfig(city: string, rideType: RideTypeValue): Promise<FareConfig> {
-    const config = await this.fareRepo.findOneBy({
-      city,
-      rideType,
-      isActive: true,
-    });
+    const [config] = await this.db
+      .select()
+      .from(fareConfigs)
+      .where(
+        and(
+          eq(fareConfigs.city, city),
+          eq(fareConfigs.rideType, rideType),
+          eq(fareConfigs.isActive, true),
+        ),
+      )
+      .limit(1);
     if (!config)
       throw new NotFoundException(`Fare config missing: ${city}/${rideType}`);
     return config;

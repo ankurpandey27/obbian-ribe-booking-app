@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { configFactory } from './config/configuration';
 import { DatabaseModule } from './common/database/database.module';
+import { DrizzleModule } from './common/database/drizzle.module';
 import { RedisModule } from './common/redis/redis.module';
 import { KafkaModule } from './common/events/kafka.module';
 import { QueuesModule } from './common/queues/queues.module';
@@ -39,6 +40,7 @@ import { ConfigService } from '@nestjs/config';
 
     // Global infrastructure
     DatabaseModule,
+    DrizzleModule,
     RedisModule,
     KafkaModule,
     QueuesModule,

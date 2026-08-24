@@ -142,8 +142,10 @@ export class RidesController {
       }
       throw err;
     }
-    // Demand signal for the surge engine (best effort, never blocks).
-    void this.surgeService.recordDemand(city).catch(() => undefined);
+    // Demand signal for the surge engine, per pickup cell (best effort).
+    void this.surgeService
+      .recordDemand(city, dto.pickupLat, dto.pickupLon)
+      .catch(() => undefined);
 
     return {
       rideId: ride.id,

@@ -18,7 +18,7 @@ export class Driver {
 
   @OneToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
-  user: User;
+  user?: User;
 
   @Column({ length: 50, unique: true })
   licenseNumber: string;
