@@ -24,23 +24,30 @@ against boundary violations.
 
 ---
 
-## ADR-002: ORM strategy — TypeORM today, Drizzle as target
+## ADR-002: ORM strategy — Drizzle (migration complete)
 
-**Status:** Accepted (migration scheduled) · **Date:** 2026-08
+**Status:** Accepted · Implemented v0.4–v0.6 · **Date:** 2026-08
 
 **Context:** MVP shipped on TypeORM (NestJS default ecosystem). R&D verdict:
 TypeORM is in maintenance decline (−8% YoY, stalled releases, weak relation
 typing), while Drizzle hit v1.0 (+340% YoY, SQL-transparent, fully typed).
 
-**Decision:** Keep TypeORM for the running base in v0.x to avoid a big-bang
-rewrite while hardening security. Migrate module-by-module to Drizzle as the
-next dedicated workstream, starting with read-heavy modules. New extracted
-microservices are born on Drizzle.
+**Decision:** ALL runtime data access goes through Drizzle
+(`DrizzleModule` → `DRIZZLE_DB`), migrated module-by-module in three waves:
+pricing/promos/users/drivers → rides/fraud/scheduled/auth/tracking/outbox →
+payments/settlement/ratings/analytics/notifications.
 
-**Consequences:** Short-term ORM duplication risk is contained because all
-data access lives behind service methods — controllers never touch repositories.
-Migration must preserve the atomic transition semantics
-(conditional UPDATE … RETURNING).
+**Residual TypeORM surface (intentional):**
+1. `DatabaseModule` boots migrations via `migrationsRun: true`.
+2. `typeorm.config.ts` CLI datasource for generating/running migrations.
+3. Legacy `*.entity.ts` classes remain as **type-only contracts** — rows are
+   structurally identical; a final sweep can replace them with
+   `typeof table.$inferSelect` exports from `common/database/schema`.
+
+**Consequences:** Hot paths get SQL-transparent typed queries with near-zero
+runtime overhead. Atomic ride transitions preserved via
+`UPDATE … WHERE status=:from RETURNING *`. Numeric columns use
+`mode: 'number'` to match prior entity types.
 
 ---
 

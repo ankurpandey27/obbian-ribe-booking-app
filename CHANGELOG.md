@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/) until v1.0,
 after which MAJOR bumps gate breaking API/schema changes.
 
+## [0.6.0] - 2026-08-23
+
+### Changed
+- **Drizzle migration complete** — all runtime data access via Drizzle
+  (waves: pricing/promos/users/drivers ? rides/fraud/scheduled/auth/tracking/
+  outbox ? payments/settlement/ratings/analytics/notifications).
+- Payment capture/refund and ride transitions commit money+state atomically.
+- TypeORM retained only as migration runner; entities are type-only contracts.
+
+### Added
+- **H3 cell surge** (res-8 hex grid): demand keyed per pickup cell, supply
+  probed from the geo index around the cell centroid — Rapido-pattern.
 ## [0.3.0] - 2026-08-23
 
 ### Added
