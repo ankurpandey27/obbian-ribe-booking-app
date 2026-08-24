@@ -18,7 +18,7 @@ function config(overrides: Partial<FareConfig> = {}): FareConfig {
 /** Minimal Drizzle chain mock: select().from().where() [await | .limit()] */
 function drizzleMock(rows: unknown[]) {
   const end = Object.assign(Promise.resolve(rows), {
-    limit: jest.fn(async () => rows),
+    limit: () => Promise.resolve(rows),
   });
   const chain = {
     from: jest.fn(() => chain),

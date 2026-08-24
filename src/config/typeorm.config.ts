@@ -17,13 +17,13 @@ export default new DataSource({
   port: Number(dbUrl?.port || process.env.DB_PORT || 5432),
   username: dbUrl
     ? decodeURIComponent(dbUrl.username)
-    : process.env.DB_USER ?? 'postgres',
+    : (process.env.DB_USER ?? 'postgres'),
   password: dbUrl
     ? decodeURIComponent(dbUrl.password)
-    : process.env.DB_PASSWORD ?? 'postgres',
+    : (process.env.DB_PASSWORD ?? 'postgres'),
   database: dbUrl
     ? dbUrl.pathname.replace(/^\//, '')
-    : process.env.DB_NAME ?? 'ride_booking',
+    : (process.env.DB_NAME ?? 'ride_booking'),
   ssl: dbUrl?.searchParams.get('sslmode') === 'require',
   entities: [join(__dirname, '..', 'modules', '**', '*.entity.{ts,js}')],
   migrations: [join(__dirname, '..', 'migrations', '*.{ts,js}')],

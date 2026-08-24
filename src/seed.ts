@@ -23,7 +23,7 @@ import { FareConfig } from './modules/pricing/entities/fare-config.entity';
 import { Promo } from './modules/promos/entities/promo.entity';
 import { SavedLocation } from './modules/users/entities/saved-location.entity';
 import { DRIVERS_GEO_KEY } from './common/redis/geo.service';
-import { RideTypeValue, UserRoleValue } from './shared/types/common';
+import { RideTypeValue } from './shared/types/common';
 
 loadEnv();
 
@@ -46,14 +46,62 @@ const CITIES: {
   factor: number;
   drivers: RideTypeValue[];
 }[] = [
-  { name: 'Delhi', lat: 28.6139, lon: 77.209, factor: 1.0, drivers: ['CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER', 'CABX_SAVER'] },
-  { name: 'Noida', lat: 28.5355, lon: 77.391, factor: 0.95, drivers: ['CABX', 'COMFORT', 'AUTO', 'CABX_SAVER'] },
-  { name: 'Gurugram', lat: 28.4595, lon: 77.0266, factor: 1.0, drivers: ['CABX', 'CABXL', 'AUTO'] },
-  { name: 'Bangalore', lat: 12.9716, lon: 77.5946, factor: 1.1, drivers: ['CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER', 'CABX_SAVER'] },
-  { name: 'Mumbai', lat: 19.076, lon: 72.8777, factor: 1.15, drivers: ['CABX', 'COMFORT', 'AUTO', 'CABXL'] },
-  { name: 'Hyderabad', lat: 17.385, lon: 78.4867, factor: 0.9, drivers: ['CABX', 'COMFORT', 'AUTO', 'TWO_WHEELER'] },
-  { name: 'Pune', lat: 18.5204, lon: 73.8567, factor: 0.95, drivers: ['CABX', 'CABXL', 'AUTO'] },
-  { name: 'Chennai', lat: 13.0827, lon: 80.2707, factor: 0.9, drivers: ['CABX', 'COMFORT', 'AUTO', 'CABX_SAVER'] },
+  {
+    name: 'Delhi',
+    lat: 28.6139,
+    lon: 77.209,
+    factor: 1.0,
+    drivers: ['CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER', 'CABX_SAVER'],
+  },
+  {
+    name: 'Noida',
+    lat: 28.5355,
+    lon: 77.391,
+    factor: 0.95,
+    drivers: ['CABX', 'COMFORT', 'AUTO', 'CABX_SAVER'],
+  },
+  {
+    name: 'Gurugram',
+    lat: 28.4595,
+    lon: 77.0266,
+    factor: 1.0,
+    drivers: ['CABX', 'CABXL', 'AUTO'],
+  },
+  {
+    name: 'Bangalore',
+    lat: 12.9716,
+    lon: 77.5946,
+    factor: 1.1,
+    drivers: ['CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER', 'CABX_SAVER'],
+  },
+  {
+    name: 'Mumbai',
+    lat: 19.076,
+    lon: 72.8777,
+    factor: 1.15,
+    drivers: ['CABX', 'COMFORT', 'AUTO', 'CABXL'],
+  },
+  {
+    name: 'Hyderabad',
+    lat: 17.385,
+    lon: 78.4867,
+    factor: 0.9,
+    drivers: ['CABX', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
+  },
+  {
+    name: 'Pune',
+    lat: 18.5204,
+    lon: 73.8567,
+    factor: 0.95,
+    drivers: ['CABX', 'CABXL', 'AUTO'],
+  },
+  {
+    name: 'Chennai',
+    lat: 13.0827,
+    lon: 80.2707,
+    factor: 0.9,
+    drivers: ['CABX', 'COMFORT', 'AUTO', 'CABX_SAVER'],
+  },
 ];
 
 // Delhi reference rates (base, perKm, perMin, min) — other cities scaled by factor.
@@ -132,7 +180,7 @@ const DRIVER_PHONE = (i: number) => `+91${9010000000 + i}`;
 /* ------------------------------ seed logic ------------------------------ */
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
-const jitter = (i: number) => ((i * 37) % 1000 - 500) / 100000;
+const jitter = (i: number) => (((i * 37) % 1000) - 500) / 100000;
 
 async function main() {
   const reset = process.argv.includes('--reset');
@@ -156,13 +204,21 @@ async function main() {
       const demoPhones = [
         ...Array.from({ length: 100 }, (_, i) => `+91${9000000000 + i}`),
         ...Array.from({ length: 100 }, (_, i) => `+91${9010000000 + i}`),
-        ...Array.from({ length: 50 }, (_, i) => `+9190000${String(i + 1).padStart(4, '0')}`),
-        ...Array.from({ length: 50 }, (_, i) => `+9190001${String(i + 1).padStart(4, '0')}`),
+        ...Array.from(
+          { length: 50 },
+          (_, i) => `+9190000${String(i + 1).padStart(4, '0')}`,
+        ),
+        ...Array.from(
+          { length: 50 },
+          (_, i) => `+9190001${String(i + 1).padStart(4, '0')}`,
+        ),
       ];
       await userRepo.delete({ phoneNumber: In(demoPhones) });
       await fareRepo.delete({ city: In(CITIES.map((c) => c.name)) });
       await promoRepo.delete({ isActive: true });
-      console.log('  reset: removed previous demo users, fare configs and promos');
+      console.log(
+        '  reset: removed previous demo users, fare configs and promos',
+      );
     }
 
     /* 1. fare configs — every city × every ride type */
@@ -183,18 +239,20 @@ async function main() {
         });
       }
     }
-    await fareRepo.upsert(fares as FareConfig[], ['city', 'rideType']);
-    console.log(`  fare configs: ${fares.length} (${CITIES.length} cities × ${RIDE_TYPES.length} types)`);
+    await fareRepo.upsert(fares, ['city', 'rideType']);
+    console.log(
+      `  fare configs: ${fares.length} (${CITIES.length} cities × ${RIDE_TYPES.length} types)`,
+    );
 
     /* 2. riders — 2 per city */
     const riders: Partial<User>[] = [];
     let riderIdx = 0;
-    for (const city of CITIES) {
+    for (const _city of CITIES) {
       for (let k = 0; k < 2; k += 1) {
         const [first, last] = RIDER_NAMES[riderIdx];
         riders.push({
           phoneNumber: RIDER_PHONE(riderIdx),
-          role: 'RIDER' as UserRoleValue,
+          role: 'RIDER',
           firstName: first,
           lastName: last,
           email: `${first.toLowerCase()}.${last.toLowerCase()}@demo.obbian.in`,
@@ -205,7 +263,7 @@ async function main() {
         riderIdx += 1;
       }
     }
-    await userRepo.upsert(riders as User[], ['phoneNumber']);
+    await userRepo.upsert(riders, ['phoneNumber']);
 
     /* 3. drivers — ONLINE + geo index + heartbeat */
     const drivers: Partial<Driver>[] = [];
@@ -221,12 +279,12 @@ async function main() {
         await userRepo.upsert(
           {
             phoneNumber: phone,
-            role: 'DRIVER' as UserRoleValue,
+            role: 'DRIVER',
             firstName: first,
             lastName: last,
             rating: 5.0,
             isVerified: true,
-          } as User,
+          },
           ['phoneNumber'],
         );
         const driverUser = await userRepo.findOneBy({ phoneNumber: phone });
@@ -252,7 +310,7 @@ async function main() {
         driverIdx += 1;
       }
     }
-    await driverRepo.upsert(drivers as Driver[], ['userId']);
+    await driverRepo.upsert(drivers, ['userId']);
     console.log(`  riders: ${riders.length}  drivers: ${drivers.length}`);
 
     /* 4. Redis — geo pool + heartbeat + cached location per driver */
@@ -272,17 +330,46 @@ async function main() {
     const yearFromNow = new Date(now.getTime() + 365 * 24 * 3600 * 1000);
     await promoRepo.upsert(
       [
-        { code: 'WELCOME20', discountPercent: 20, maxDiscount: 100, maxUsesPerUser: 3, validFrom: now, validUntil: yearFromNow, isActive: true },
-        { code: 'FIRST50', discountPercent: 50, maxDiscount: 250, maxUsesPerUser: 1, validFrom: now, validUntil: yearFromNow, isActive: true },
-        { code: 'DEMO10', discountPercent: 10, maxDiscount: 50, maxUsesPerUser: 10, validFrom: now, validUntil: yearFromNow, isActive: true },
+        {
+          code: 'WELCOME20',
+          discountPercent: 20,
+          maxDiscount: 100,
+          maxUsesPerUser: 3,
+          validFrom: now,
+          validUntil: yearFromNow,
+          isActive: true,
+        },
+        {
+          code: 'FIRST50',
+          discountPercent: 50,
+          maxDiscount: 250,
+          maxUsesPerUser: 1,
+          validFrom: now,
+          validUntil: yearFromNow,
+          isActive: true,
+        },
+        {
+          code: 'DEMO10',
+          discountPercent: 10,
+          maxDiscount: 50,
+          maxUsesPerUser: 10,
+          validFrom: now,
+          validUntil: yearFromNow,
+          isActive: true,
+        },
       ] as Promo[],
       ['code'],
     );
-    console.log('  promos: WELCOME20 (20% off, max ₹100), FIRST50 (50% off, max ₹250), DEMO10 (10% off, max ₹50)');
+    console.log(
+      '  promos: WELCOME20 (20% off, max ₹100), FIRST50 (50% off, max ₹250), DEMO10 (10% off, max ₹50)',
+    );
 
     /* 6. saved locations — HOME + WORK per demo rider */
     const riderPhonesAll = Array.from({ length: 16 }, (_, i) => RIDER_PHONE(i));
-    const demoRiders = await userRepo.find({ where: { phoneNumber: In(riderPhonesAll) }, order: { createdAt: 'ASC' } });
+    const demoRiders = await userRepo.find({
+      where: { phoneNumber: In(riderPhonesAll) },
+      order: { createdAt: 'ASC' },
+    });
     await savedRepo.delete({ userId: In(demoRiders.map((u) => u.id)) });
     const saved: Partial<SavedLocation>[] = [];
     for (const [idx, u] of demoRiders.entries()) {
@@ -305,7 +392,9 @@ async function main() {
       );
     }
     await savedRepo.save(saved as SavedLocation[]);
-    console.log(`  saved locations: ${saved.length} (HOME+WORK × ${demoRiders.length} riders)`);
+    console.log(
+      `  saved locations: ${saved.length} (HOME+WORK × ${demoRiders.length} riders)`,
+    );
 
     console.log('\nSeed complete. Demo login (OTP_PROVIDER=dev → otp 123456):');
     console.log('  riders:');
@@ -322,7 +411,9 @@ async function main() {
         nums.push(DRIVER_PHONE(phoneIdx));
         phoneIdx += 1;
       }
-      console.log(`    ${city.name.padEnd(10)} ${nums.join(', ')} (${city.drivers.join('/')}, ONLINE)`);
+      console.log(
+        `    ${city.name.padEnd(10)} ${nums.join(', ')} (${city.drivers.join('/')}, ONLINE)`,
+      );
     }
   } finally {
     await redis.quit();

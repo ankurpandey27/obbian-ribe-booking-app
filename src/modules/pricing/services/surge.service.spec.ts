@@ -45,7 +45,9 @@ function geoMock(supplyCount: number) {
   return {
     findNearbyDriverIds: jest
       .fn()
-      .mockResolvedValue(Array.from({ length: supplyCount }, (_, i) => `d${i}`)),
+      .mockResolvedValue(
+        Array.from({ length: supplyCount }, (_, i) => `d${i}`),
+      ),
   };
 }
 
@@ -69,9 +71,7 @@ describe('SurgeService', () => {
 
     await service.recordDemand('Delhi', LAT, LON);
     expect(redis.incr).not.toHaveBeenCalled();
-    await expect(
-      service.getMultiplier('Delhi', LAT, LON),
-    ).resolves.toBe(1.0);
+    await expect(service.getMultiplier('Delhi', LAT, LON)).resolves.toBe(1.0);
   });
 
   it('returns 1.0 when demand is below the threshold', async () => {
@@ -85,14 +85,16 @@ describe('SurgeService', () => {
       await service.recordDemand('Delhi', LAT, LON);
     }
 
-    await expect(
-      service.getMultiplier('Delhi', LAT, LON),
-    ).resolves.toBe(1.0); // ratio 0.4
+    await expect(service.getMultiplier('Delhi', LAT, LON)).resolves.toBe(1.0); // ratio 0.4
   });
 
   it('steps the multiplier up when demand exceeds supply', async () => {
     const redis = redisMock();
-    const service = new SurgeService(redis as never, geoMock(10) as never, config());
+    const service = new SurgeService(
+      redis as never,
+      geoMock(10) as never,
+      config(),
+    );
     for (let i = 0; i < 30; i++) {
       await service.recordDemand('Delhi', LAT, LON);
     }
@@ -103,7 +105,11 @@ describe('SurgeService', () => {
 
   it('caps the multiplier at the configured maximum', async () => {
     const redis = redisMock();
-    const service = new SurgeService(redis as never, geoMock(1) as never, config());
+    const service = new SurgeService(
+      redis as never,
+      geoMock(1) as never,
+      config(),
+    );
     for (let i = 0; i < 999; i++) {
       await service.recordDemand('Delhi', LAT, LON);
     }
@@ -117,15 +123,17 @@ describe('SurgeService', () => {
     const service = new SurgeService(redis as never, geo as never, config());
     await redis.set(multiplierKey(service), '2.25');
 
-    await expect(
-      service.getMultiplier('Delhi', LAT, LON),
-    ).resolves.toBe(2.25);
+    await expect(service.getMultiplier('Delhi', LAT, LON)).resolves.toBe(2.25);
     expect(geo.findNearbyDriverIds).not.toHaveBeenCalled();
   });
 
   it('rounds multipliers to 2 decimals', async () => {
     const redis = redisMock();
-    const service = new SurgeService(redis as never, geoMock(10) as never, config());
+    const service = new SurgeService(
+      redis as never,
+      geoMock(10) as never,
+      config(),
+    );
     for (let i = 0; i < 16; i++) {
       await service.recordDemand('Delhi', LAT, LON);
     }
@@ -136,7 +144,11 @@ describe('SurgeService', () => {
 
   it('scopes demand keys per H3 cell (no city-wide bleed)', async () => {
     const redis = redisMock();
-    const service = new SurgeService(redis as never, geoMock(5) as never, config());
+    const service = new SurgeService(
+      redis as never,
+      geoMock(5) as never,
+      config(),
+    );
     await service.recordDemand('Delhi', LAT, LON);
 
     expect(redis.incr).toHaveBeenCalledWith(demandKey(service));

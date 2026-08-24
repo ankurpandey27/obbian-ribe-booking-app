@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
-import { drivers as driversTable, users } from '../../../common/database/schema';
+import {
+  drivers as driversTable,
+  users,
+} from '../../../common/database/schema';
 import { Driver } from '../entities/driver.entity';
 import { GeoService } from '../../../common/redis/geo.service';
 import { DriverStatusValue, RideTypeValue } from '../../../shared/types/common';
@@ -166,7 +169,12 @@ export class DriversService {
     vehicleType: RideTypeValue,
     limit = 20,
   ): Promise<Driver[]> {
-    const geoIds = await this.geo.findNearbyDriverIds(lon, lat, radiusKm, limit);
+    const geoIds = await this.geo.findNearbyDriverIds(
+      lon,
+      lat,
+      radiusKm,
+      limit,
+    );
     if (geoIds.length === 0) return [];
 
     const freshIds = await this.geo.filterFreshDrivers(geoIds);

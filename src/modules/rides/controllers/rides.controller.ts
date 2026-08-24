@@ -93,7 +93,12 @@ export class RidesController {
         city,
         [dto.rideType],
       ),
-      this.fraudService.guardRideRequest(user.sub, dto.pickupLat, dto.pickupLon, city),
+      this.fraudService.guardRideRequest(
+        user.sub,
+        dto.pickupLat,
+        dto.pickupLon,
+        city,
+      ),
     ]);
 
     const estimatedFare = this.pricingService.calculateFare(
@@ -129,7 +134,8 @@ export class RidesController {
         estimatedFare: lockedFare,
         distanceKm: quote.distanceKm,
         durationMin: Math.max(0, Math.round(quote.durationMin ?? 0)),
-        surgeMultiplier: quote.surgeMultiplier ?? Number(config.surgeMultiplier),
+        surgeMultiplier:
+          quote.surgeMultiplier ?? Number(config.surgeMultiplier),
         promoCode: dto.promoCode,
         promoDiscount,
       });

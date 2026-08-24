@@ -24,7 +24,8 @@ export class HealthService {
     ]);
 
     return {
-      status: database.status === 'ok' && redis.status === 'ok' ? 'ok' : 'degraded',
+      status:
+        database.status === 'ok' && redis.status === 'ok' ? 'ok' : 'degraded',
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
       database,

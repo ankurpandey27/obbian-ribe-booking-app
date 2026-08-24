@@ -1,7 +1,10 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, eq, gte } from 'drizzle-orm';
+import { count, eq, gte } from 'drizzle-orm';
 import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
-import { drivers as driversTable, rides as ridesTable } from '../../../common/database/schema';
+import {
+  drivers as driversTable,
+  rides as ridesTable,
+} from '../../../common/database/schema';
 
 export interface AnalyticsSummary {
   from: string;
@@ -29,9 +32,7 @@ export interface AnalyticsSummary {
  */
 @Injectable()
 export class AnalyticsService {
-  constructor(
-    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
-  ) {}
+  constructor(@Inject(DRIZZLE_DB) private readonly db: DrizzleDB) {}
 
   async summary(days = 30): Promise<AnalyticsSummary> {
     const to = new Date();

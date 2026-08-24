@@ -2,22 +2,17 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import { refreshTokens } from '../../../common/database/schema';
-import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
-import type { RefreshToken } from '../entities/refresh-token.entity';
-
-type RefreshTokenRow = typeof refreshTokens.$inferSelect;
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import { AuthResponseDto } from '../dto/auth.dto';
 import { User } from '../../users/entities/user.entity';
 import {
   UserLookupPort,
   USER_LOOKUP,
 } from '../../../shared/contracts/user-lookup.port';
-import { JwtService } from '@nestjs/jwt';
 
+/** Bridge type until the entity sweep (ADR-002). */
 export interface JwtPayload {
   sub: string; // userId
   role: string;
@@ -107,7 +102,9 @@ export class TokenService {
     await this.db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })
-      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+      .where(
+        and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)),
+      );
   }
 
   async verifyAccess(token: string): Promise<JwtPayload> {

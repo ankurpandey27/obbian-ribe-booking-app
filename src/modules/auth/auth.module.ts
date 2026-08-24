@@ -4,14 +4,10 @@ import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { OtpService } from './services/otp.service';
 import { TokenService } from './services/token.service';
-import { RefreshToken } from './entities/refresh-token.entity';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [
-    UsersModule,
-    JwtModule.register({ global: true }),
-  ],
+  imports: [UsersModule, JwtModule.register({ global: true })],
   controllers: [AuthController],
   providers: [AuthService, OtpService, TokenService],
   exports: [TokenService, OtpService],

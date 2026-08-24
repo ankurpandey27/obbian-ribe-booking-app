@@ -7,10 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { asc, eq } from 'drizzle-orm';
-import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import { scheduledRides } from '../../../common/database/schema';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -125,7 +122,10 @@ export class ScheduledRidesService {
       scheduled.riderId,
     );
     if (active.length > 0) {
-      await this.db.update(scheduledRides).set({ status: 'CANCELLED', updatedAt: new Date() }).where(eq(scheduledRides.id, scheduled.id));
+      await this.db
+        .update(scheduledRides)
+        .set({ status: 'CANCELLED', updatedAt: new Date() })
+        .where(eq(scheduledRides.id, scheduled.id));
       this.logger.warn(
         `Scheduled ride ${scheduled.id} cancelled: rider already active`,
       );
@@ -182,7 +182,11 @@ export class ScheduledRidesService {
   }
 
   async cancel(riderId: string, id: string): Promise<{ cancelled: boolean }> {
-    const [scheduled] = await this.db.select().from(scheduledRides).where(eq(scheduledRides.id, id)).limit(1);
+    const [scheduled] = await this.db
+      .select()
+      .from(scheduledRides)
+      .where(eq(scheduledRides.id, id))
+      .limit(1);
     if (!scheduled || scheduled.riderId !== riderId) {
       throw new NotFoundException('Scheduled ride not found');
     }
@@ -191,7 +195,10 @@ export class ScheduledRidesService {
         `Cannot cancel: status is ${scheduled.status}`,
       );
     }
-    await this.db.update(scheduledRides).set({ status: 'CANCELLED', updatedAt: new Date() }).where(eq(scheduledRides.id, id));
+    await this.db
+      .update(scheduledRides)
+      .set({ status: 'CANCELLED', updatedAt: new Date() })
+      .where(eq(scheduledRides.id, id));
     await this.scheduledQueue.remove(`scheduled-${id}`).catch(() => undefined);
     return { cancelled: true };
   }

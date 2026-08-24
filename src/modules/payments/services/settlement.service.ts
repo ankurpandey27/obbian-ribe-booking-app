@@ -3,11 +3,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, gte } from 'drizzle-orm';
 import Razorpay from 'razorpay';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
-import { drivers as driversTable, rides as ridesTable } from '../../../common/database/schema';
+  drivers as driversTable,
+  rides as ridesTable,
+} from '../../../common/database/schema';
 
 export interface SettlementRecord {
   driverId: string;

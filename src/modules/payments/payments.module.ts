@@ -3,9 +3,6 @@ import { PaymentsController } from './controllers/payments.controller';
 import { PaymentsService } from './services/payments.service';
 import { SettlementService } from './services/settlement.service';
 import { PaymentProcessorWorker } from './workers/payment-processor.worker';
-import { Payment } from './entities/payment.entity';
-import { Ride } from '../rides/entities/ride.entity';
-import { Driver } from '../drivers/entities/driver.entity';
 import { RidesModule } from '../rides/rides.module';
 
 @Module({

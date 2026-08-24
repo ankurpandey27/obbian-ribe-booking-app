@@ -1,9 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import { savedLocations, users } from '../../../common/database/schema';
 import { User } from '../entities/user.entity';
 import { SavedLocationDto } from '../dto/users.dto';

@@ -6,15 +6,13 @@ import {
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
-import { payments as paymentsTable, rides as ridesTable } from '../../../common/database/schema';
+  payments as paymentsTable,
+  rides as ridesTable,
+} from '../../../common/database/schema';
 import { ConfigService } from '@nestjs/config';
 import Razorpay from 'razorpay';
-import { Payment } from '../entities/payment.entity';
-import { Ride } from '../../rides/entities/ride.entity';
 import { EventBus } from '../../../common/events/event-bus.service';
 import { TOPICS } from '../../../shared/events/topics';
 import { PaymentEventType } from '../../../shared/events/contracts';
@@ -110,7 +108,11 @@ export class PaymentsService {
 
     await this.db
       .update(paymentsTable)
-      .set({ gatewayOrderId: order.id, status: 'PROCESSING', updatedAt: new Date() })
+      .set({
+        gatewayOrderId: order.id,
+        status: 'PROCESSING',
+        updatedAt: new Date(),
+      })
       .where(eq(paymentsTable.id, data.paymentId));
 
     return order;
@@ -217,7 +219,11 @@ export class PaymentsService {
       await this.db.transaction(async (tx) => {
         await tx
           .update(paymentsTable)
-          .set({ status: 'COMPLETED', paidAt: new Date(), updatedAt: new Date() })
+          .set({
+            status: 'COMPLETED',
+            paidAt: new Date(),
+            updatedAt: new Date(),
+          })
           .where(eq(paymentsTable.id, payment.id));
         await tx
           .update(ridesTable)
@@ -282,7 +288,11 @@ export class PaymentsService {
     await this.db.transaction(async (tx) => {
       await tx
         .update(paymentsTable)
-        .set({ status: 'REFUNDED', refundedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: 'REFUNDED',
+          refundedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(paymentsTable.id, payment.id));
       await tx
         .update(ridesTable)

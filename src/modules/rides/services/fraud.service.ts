@@ -1,9 +1,4 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, count, eq, gt, inArray } from 'drizzle-orm';
 import { InjectRedis } from '../../../common/redis/redis.decorator';
@@ -75,9 +70,7 @@ export class FraudService {
     const [row] = await this.db
       .select({ value: count() })
       .from(rides)
-      .where(
-        and(eq(rides.riderId, riderId), gt(rides.createdAt, since)),
-      );
+      .where(and(eq(rides.riderId, riderId), gt(rides.createdAt, since)));
     if (Number(row?.value ?? 0) >= this.maxRidesPerHour) {
       throw new ForbiddenException(
         `Ride velocity limit reached (${this.maxRidesPerHour}/hour)`,

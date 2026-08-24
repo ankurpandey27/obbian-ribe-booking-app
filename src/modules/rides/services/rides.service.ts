@@ -12,10 +12,7 @@ import { Queue } from 'bullmq';
 import { Ride } from '../entities/ride.entity';
 import { RideStateMachine } from '../state-machine/ride-state-machine';
 import { OutboxService } from '../../../common/events/outbox.service';
-import {
-  DRIZZLE_DB,
-  DrizzleDB,
-} from '../../../common/database/drizzle.module';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
 import { rides as ridesTable } from '../../../common/database/schema';
 import { TOPICS } from '../../../shared/events/topics';
 import { RideEventType } from '../../../shared/events/contracts';
@@ -54,7 +51,7 @@ export class RidesService {
   private readonly logger = new Logger(RidesService.name);
 
   constructor(
-    private readonly db: DrizzleDB,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly outbox: OutboxService,
     private readonly pricing: PricingService,
     private readonly drivers: DriversService,

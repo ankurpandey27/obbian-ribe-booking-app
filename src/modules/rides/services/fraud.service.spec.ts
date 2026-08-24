@@ -33,7 +33,7 @@ function redisMock() {
  */
 function drizzleMock(counts: number[]) {
   const queue = [...counts];
-  const next = () => [{ value: queue.length > 1 ? queue.shift()! : queue[0] }];
+  const next = () => [{ value: queue.length > 1 ? queue.shift() : queue[0] }];
   const end = () => Promise.resolve(next());
   const chain = {
     from: jest.fn(() => chain),

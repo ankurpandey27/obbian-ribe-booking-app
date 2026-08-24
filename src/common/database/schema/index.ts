@@ -35,7 +35,9 @@ export const users = pgTable('users', {
   lastName: varchar('lastName'),
   profileImageUrl: varchar('profileImageUrl'),
   role: userRole('role').notNull().default('RIDER'),
-  rating: numeric('', { precision: 3, scale: 2, mode: 'number' }).notNull().default(5.0),
+  rating: numeric('rating', { precision: 3, scale: 2, mode: 'number' })
+    .notNull()
+    .default(5.0),
   isVerified: boolean('isVerified').notNull().default(false),
   lastLoginAt: timestamp('lastLoginAt', { withTimezone: true }),
   createdAt: timestamp('createdAt', { withTimezone: true })
@@ -90,9 +92,7 @@ export const drivers = pgTable(
     userId: uuid('userId')
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
-    licenseNumber: varchar('licenseNumber', { length: 50 })
-      .notNull()
-      .unique(),
+    licenseNumber: varchar('licenseNumber', { length: 50 }).notNull().unique(),
     vehicleRegistration: varchar('vehicleRegistration', { length: 50 })
       .notNull()
       .unique(),
@@ -100,20 +100,31 @@ export const drivers = pgTable(
     vehicleColor: varchar('vehicleColor', { length: 20 }),
     vehicleType: rideType('vehicleType').notNull(),
     status: driverStatus('status').notNull().default('OFFLINE'),
-    rating: numeric('', { precision: 3, scale: 2, mode: 'number' }).notNull().default(5.0),
+    rating: numeric('rating', { precision: 3, scale: 2, mode: 'number' })
+      .notNull()
+      .default(5.0),
     totalRides: integer('totalRides').notNull().default(0),
-    completionRate: numeric('completionRate', { mode: 'number',
+    completionRate: numeric('completionRate', {
+      mode: 'number',
       precision: 5,
       scale: 2,
-    }).notNull().default(100.0),
-    acceptanceRate: numeric('acceptanceRate', { mode: 'number',
+    })
+      .notNull()
+      .default(100.0),
+    acceptanceRate: numeric('acceptanceRate', {
+      mode: 'number',
       precision: 5,
       scale: 2,
-    }).notNull().default(100.0),
-    walletBalance: numeric('walletBalance', { mode: 'number',
+    })
+      .notNull()
+      .default(100.0),
+    walletBalance: numeric('walletBalance', {
+      mode: 'number',
       precision: 10,
       scale: 2,
-    }).notNull().default(0),
+    })
+      .notNull()
+      .default(0),
     bankAccount: varchar('bankAccount', { length: 20 }),
     upiId: varchar('upiId'),
     lastLocationUpdateAt: timestamp('lastLocationUpdateAt', {
@@ -150,18 +161,37 @@ export const rides = pgTable(
     dropoffLon: doublePrecision('dropoffLon').notNull(),
     dropoffAddress: varchar('dropoffAddress'),
     city: varchar('city', { length: 50 }).notNull().default('Delhi'),
-    estimatedFare: numeric('', { precision: 10, scale: 2, mode: 'number' }).notNull(),
-    totalFare: numeric('', { precision: 10, scale: 2, mode: 'number' }),
-    surgeMultiplier: numeric('surgeMultiplier', { mode: 'number',
+    estimatedFare: numeric('estimatedFare', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    }).notNull(),
+    totalFare: numeric('totalFare', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    }),
+    surgeMultiplier: numeric('surgeMultiplier', {
+      mode: 'number',
       precision: 3,
       scale: 2,
-    }).notNull().default(1.0),
-    distanceKm: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    })
+      .notNull()
+      .default(1.0),
+    distanceKm: numeric('distanceKm', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(0),
     durationMin: integer('durationMin').notNull().default(0),
     promoCode: varchar('promoCode'),
-    promoDiscount: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    promoDiscount: numeric('promoDiscount', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(0),
     paymentStatus: paymentStatus('paymentStatus').notNull().default('PENDING'),
@@ -172,7 +202,11 @@ export const rides = pgTable(
     completedAt: timestamp('completedAt', { withTimezone: true }),
     cancelledAt: timestamp('cancelledAt', { withTimezone: true }),
     cancellationReason: cancellationReason('cancellationReason'),
-    cancellationFee: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    cancellationFee: numeric('cancellationFee', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(0),
     riderRating: integer('riderRating'),
@@ -224,7 +258,11 @@ export const payments = pgTable(
     userId: uuid('userId')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    amount: numeric('', { precision: 10, scale: 2, mode: 'number' }).notNull(),
+    amount: numeric('amount', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull().default('INR'),
     status: paymentStatus('status').notNull().default('PENDING'),
     method: paymentMethod('method').notNull().default('UPI'),
@@ -252,8 +290,16 @@ export const payments = pgTable(
 export const promos = pgTable('promos', {
   id: uuid('id').defaultRandom().primaryKey(),
   code: varchar('code', { length: 20 }).notNull().unique(),
-  discountPercent: numeric('', { precision: 5, scale: 2, mode: 'number' }).notNull(),
-  maxDiscount: numeric('', { precision: 10, scale: 2, mode: 'number' })
+  discountPercent: numeric('discountPercent', {
+    precision: 5,
+    scale: 2,
+    mode: 'number',
+  }).notNull(),
+  maxDiscount: numeric('maxDiscount', {
+    precision: 10,
+    scale: 2,
+    mode: 'number',
+  })
     .notNull()
     .default(0),
   maxUsesPerUser: integer('maxUsesPerUser').notNull().default(1),
@@ -271,29 +317,43 @@ export const fareConfigs = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     city: varchar('city', { length: 50 }).notNull(),
     rideType: rideType('rideType').notNull(),
-    baseFare: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    baseFare: numeric('baseFare', { precision: 10, scale: 2, mode: 'number' })
       .notNull()
       .default(50),
-    perKmRate: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    perKmRate: numeric('perKmRate', { precision: 10, scale: 2, mode: 'number' })
       .notNull()
       .default(10),
-    perMinuteRate: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    perMinuteRate: numeric('perMinuteRate', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(1),
-    surgeMultiplier: numeric('', { precision: 3, scale: 2, mode: 'number' })
+    surgeMultiplier: numeric('surgeMultiplier', {
+      precision: 3,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(1.0),
-    minimumFare: numeric('', { precision: 10, scale: 2, mode: 'number' })
+    minimumFare: numeric('minimumFare', {
+      precision: 10,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(20),
-    commissionRate: numeric('', { precision: 3, scale: 2, mode: 'number' })
+    commissionRate: numeric('commissionRate', {
+      precision: 3,
+      scale: 2,
+      mode: 'number',
+    })
       .notNull()
       .default(0.25),
     isActive: boolean('isActive').notNull().default(true),
   },
-  (t) => [
-    index('IDX_fare_configs_city').on(t.city),
-  ],
+  (t) => [index('IDX_fare_configs_city').on(t.city)],
 );
 
 /** Transactional outbox (see common/events/outbox.entity.ts). */

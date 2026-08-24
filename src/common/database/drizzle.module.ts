@@ -28,9 +28,10 @@ export type DrizzleDB = NodePgDatabase<typeof schema>;
           ? new Pool({
               connectionString: url,
               max: 20,
-              ssl: new URL(url).searchParams.get('sslmode') === 'require'
-                ? { rejectUnauthorized: false }
-                : undefined,
+              ssl:
+                new URL(url).searchParams.get('sslmode') === 'require'
+                  ? { rejectUnauthorized: false }
+                  : undefined,
             })
           : new Pool({
               host: config.get<string>('database.host', 'localhost'),
@@ -39,10 +40,14 @@ export type DrizzleDB = NodePgDatabase<typeof schema>;
               password: config.get<string>('database.password', 'postgres'),
               database: config.get<string>('database.name', 'ride_booking'),
               max: 20,
-              ssl: config.get<string>('server.env') === 'production'
-                ? { rejectUnauthorized: false }
-                : undefined,
+              ssl:
+                config.get<string>('server.env') === 'production'
+                  ? { rejectUnauthorized: false }
+                  : undefined,
             });
+        // Typed-union overload in drizzle's API trips no-unsafe-argument;
+        // runtime shape verified by schema.spec.ts.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return drizzle(pool, { schema });
       },
     },

@@ -26,7 +26,9 @@ export class PromosService {
     const [promo] = await this.db
       .select()
       .from(promos)
-      .where(and(eq(promos.code, code.toUpperCase()), eq(promos.isActive, true)))
+      .where(
+        and(eq(promos.code, code.toUpperCase()), eq(promos.isActive, true)),
+      )
       .limit(1);
     return promo;
   }
