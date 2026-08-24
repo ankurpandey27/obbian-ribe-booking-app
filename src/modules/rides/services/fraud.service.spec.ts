@@ -26,31 +26,42 @@ function redisMock() {
   };
 }
 
-function rideRepoMock(count: jest.Mock) {
-  return { count };
+/**
+ * Drizzle mock: db.select({value}).from().where() resolves to rows queued
+ * in order — first call = velocity count, second = concurrency count.
+ * The last value repeats when more queries than values are issued.
+ */
+function drizzleMock(counts: number[]) {
+  const queue = [...counts];
+  const next = () => [{ value: queue.length > 1 ? queue.shift()! : queue[0] }];
+  const end = () => Promise.resolve(next());
+  const chain = {
+    from: jest.fn(() => chain),
+    where: jest.fn(() => end()),
+  };
+  return { select: jest.fn(() => chain) };
 }
 
 describe('FraudService', () => {
   it('skips all guards when disabled', async () => {
-    const count = jest.fn();
     const redis = redisMock();
+    const db = drizzleMock([]);
     const service = new FraudService(
-      rideRepoMock(count) as never,
+      db as never,
       redis as never,
       config({ fraud: { enabled: false } }),
     );
 
     await service.guardRideRequest('rider-1', 28.7, 77.1, 'Delhi');
 
-    expect(count).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
     expect(redis.get).not.toHaveBeenCalled();
   });
 
   it('blocks when ride velocity per hour is at the cap', async () => {
-    const redis = redisMock();
     const service = new FraudService(
-      rideRepoMock(jest.fn().mockResolvedValue(5)) as never,
-      redis as never,
+      drizzleMock([5]) as never,
+      redisMock() as never,
       config(),
     );
 
@@ -60,14 +71,9 @@ describe('FraudService', () => {
   });
 
   it('allows a ride below the velocity cap', async () => {
-    const count = jest
-      .fn()
-      .mockResolvedValueOnce(4) // velocity
-      .mockResolvedValueOnce(0); // concurrency
-    const redis = redisMock();
     const service = new FraudService(
-      rideRepoMock(count) as never,
-      redis as never,
+      drizzleMock([4, 0]) as never, // velocity 4 < cap, concurrency 0
+      redisMock() as never,
       config(),
     );
 
@@ -77,14 +83,9 @@ describe('FraudService', () => {
   });
 
   it('blocks too many concurrent active rides', async () => {
-    const count = jest
-      .fn()
-      .mockResolvedValueOnce(1) // velocity
-      .mockResolvedValueOnce(2); // concurrency
-    const redis = redisMock();
     const service = new FraudService(
-      rideRepoMock(count) as never,
-      redis as never,
+      drizzleMock([1, 2]) as never, // velocity ok, concurrency at cap
+      redisMock() as never,
       config(),
     );
 
@@ -97,7 +98,7 @@ describe('FraudService', () => {
     const redis = redisMock();
     redis.get.mockResolvedValue('3'); // 3 previous requests in window
     const service = new FraudService(
-      rideRepoMock(jest.fn().mockResolvedValue(0)) as never,
+      drizzleMock([0]) as never,
       redis as never,
       config(),
     );
@@ -108,11 +109,10 @@ describe('FraudService', () => {
   });
 
   it('fails open when Redis throws (never blocks genuine riders)', async () => {
-    const count = jest.fn().mockResolvedValue(0);
     const redis = redisMock();
     redis.get.mockRejectedValue(new Error('redis down'));
     const service = new FraudService(
-      rideRepoMock(count) as never,
+      drizzleMock([0]) as never,
       redis as never,
       config(),
     );

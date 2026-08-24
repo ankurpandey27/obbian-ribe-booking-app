@@ -1,10 +1,15 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, In } from 'typeorm';
+import { and, count, eq, gt, inArray } from 'drizzle-orm';
 import { InjectRedis } from '../../../common/redis/redis.decorator';
 import { Redis } from 'ioredis';
-import { Ride } from '../entities/ride.entity';
+import { DRIZZLE_DB, DrizzleDB } from '../../../common/database/drizzle.module';
+import { rides } from '../../../common/database/schema';
 
 /**
  * FraudService — ride-request guards. Cheap DB + Redis checks that
@@ -25,7 +30,7 @@ export class FraudService {
   private readonly maxDuplicateRequests: number;
 
   constructor(
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     @InjectRedis() private readonly redis: Redis,
     config: ConfigService,
   ) {
@@ -67,10 +72,13 @@ export class FraudService {
 
   private async guardVelocity(riderId: string): Promise<void> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
-    const count = await this.rideRepo.count({
-      where: { riderId, createdAt: MoreThan(since) },
-    });
-    if (count >= this.maxRidesPerHour) {
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(rides)
+      .where(
+        and(eq(rides.riderId, riderId), gt(rides.createdAt, since)),
+      );
+    if (Number(row?.value ?? 0) >= this.maxRidesPerHour) {
       throw new ForbiddenException(
         `Ride velocity limit reached (${this.maxRidesPerHour}/hour)`,
       );
@@ -78,19 +86,22 @@ export class FraudService {
   }
 
   private async guardConcurrency(riderId: string): Promise<void> {
-    const active = await this.rideRepo.count({
-      where: {
-        riderId,
-        status: In([
-          'REQUESTED',
-          'MATCHING',
-          'ACCEPTED',
-          'ARRIVED',
-          'IN_PROGRESS',
-        ]),
-      },
-    });
-    if (active >= this.maxConcurrentActive) {
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(rides)
+      .where(
+        and(
+          eq(rides.riderId, riderId),
+          inArray(rides.status, [
+            'REQUESTED',
+            'MATCHING',
+            'ACCEPTED',
+            'ARRIVED',
+            'IN_PROGRESS',
+          ]),
+        ),
+      );
+    if (Number(row?.value ?? 0) >= this.maxConcurrentActive) {
       throw new ForbiddenException(
         `Too many active rides (max ${this.maxConcurrentActive})`,
       );

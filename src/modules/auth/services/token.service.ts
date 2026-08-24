@@ -1,9 +1,15 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
-import { RefreshToken } from '../entities/refresh-token.entity';
+import { refreshTokens } from '../../../common/database/schema';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import type { RefreshToken } from '../entities/refresh-token.entity';
+
+type RefreshTokenRow = typeof refreshTokens.$inferSelect;
 import { AuthResponseDto } from '../dto/auth.dto';
 import { User } from '../../users/entities/user.entity';
 import {
@@ -27,8 +33,7 @@ export interface JwtPayload {
 export class TokenService {
   constructor(
     private readonly jwt: JwtService,
-    @InjectRepository(RefreshToken)
-    private readonly refreshRepo: Repository<RefreshToken>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly config: ConfigService,
     @Inject(USER_LOOKUP) private readonly users: UserLookupPort,
   ) {}
@@ -44,7 +49,7 @@ export class TokenService {
       Date.now() + this.config.get<number>('jwt.refreshTtl', 2592000) * 1000,
     );
 
-    await this.refreshRepo.save({
+    await this.db.insert(refreshTokens).values({
       userId: user.id,
       tokenHash: this.hash(refreshToken),
       expiresAt,
@@ -64,9 +69,11 @@ export class TokenService {
     refreshToken: string,
     deviceInfo?: string,
   ): Promise<AuthResponseDto> {
-    const stored = await this.refreshRepo.findOneBy({
-      tokenHash: this.hash(refreshToken),
-    });
+    const [stored] = await this.db
+      .select()
+      .from(refreshTokens)
+      .where(eq(refreshTokens.tokenHash, this.hash(refreshToken)))
+      .limit(1);
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -77,8 +84,10 @@ export class TokenService {
       throw new UnauthorizedException('Refresh token reuse detected');
     }
 
-    stored.rotatedAt = new Date();
-    await this.refreshRepo.save(stored);
+    await this.db
+      .update(refreshTokens)
+      .set({ rotatedAt: new Date() })
+      .where(eq(refreshTokens.id, stored.id));
 
     const user = await this.users.findById(stored.userId);
     if (!user) throw new UnauthorizedException('User no longer exists');
@@ -88,17 +97,17 @@ export class TokenService {
 
   async revoke(refreshToken?: string): Promise<void> {
     if (!refreshToken) return;
-    await this.refreshRepo.update(
-      { tokenHash: this.hash(refreshToken) },
-      { revokedAt: new Date() },
-    );
+    await this.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(eq(refreshTokens.tokenHash, this.hash(refreshToken)));
   }
 
   async revokeAllForUser(userId: string): Promise<void> {
-    await this.refreshRepo.update(
-      { userId, revokedAt: undefined },
-      { revokedAt: new Date() },
-    );
+    await this.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
   }
 
   async verifyAccess(token: string): Promise<JwtPayload> {

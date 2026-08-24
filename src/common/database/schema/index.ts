@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  jsonb,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -304,7 +305,7 @@ export const outboxEvents = pgTable(
     type: varchar('type', { length: 100 }).notNull(),
     aggregateType: varchar('aggregateType', { length: 50 }).notNull(),
     aggregateId: uuid('aggregateId').notNull(),
-    payload: text('payload').notNull(), // jsonb — typed via $type<JSON>
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(), // jsonb — typed via $type<JSON>
     status: outboxStatus('status').notNull().default('PENDING'),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('lastError'),

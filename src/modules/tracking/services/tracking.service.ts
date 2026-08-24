@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Inject } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import { rides } from '../../../common/database/schema';
 import { Ride } from '../../rides/entities/ride.entity';
 import { GeoService } from '../../../common/redis/geo.service';
 import { MapsService } from '../../maps/services/maps.service';
@@ -18,14 +23,14 @@ const ETA_CACHE_TTL = 30; // seconds
 @Injectable()
 export class TrackingService {
   constructor(
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
+    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly geo: GeoService,
     private readonly maps: MapsService,
     @InjectRedis() private readonly redis: Redis,
   ) {}
 
   async getTracking(rideId: string) {
-    const ride = await this.rideRepo.findOneBy({ id: rideId });
+    const [ride] = await this.db.select().from(rides).where(eq(rides.id, rideId)).limit(1);
     if (!ride) throw new NotFoundException(`Ride ${rideId} not found`);
 
     const driverPos = ride.driverId

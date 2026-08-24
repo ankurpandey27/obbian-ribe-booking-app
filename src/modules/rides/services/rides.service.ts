@@ -1,17 +1,22 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, In } from 'typeorm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Ride } from '../entities/ride.entity';
 import { RideStateMachine } from '../state-machine/ride-state-machine';
 import { OutboxService } from '../../../common/events/outbox.service';
+import {
+  DRIZZLE_DB,
+  DrizzleDB,
+} from '../../../common/database/drizzle.module';
+import { rides as ridesTable } from '../../../common/database/schema';
 import { TOPICS } from '../../../shared/events/topics';
 import { RideEventType } from '../../../shared/events/contracts';
 import { QUEUE_MATCHING } from '../../../common/queues/queues.module';
@@ -49,8 +54,7 @@ export class RidesService {
   private readonly logger = new Logger(RidesService.name);
 
   constructor(
-    @InjectRepository(Ride) private readonly rideRepo: Repository<Ride>,
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly db: DrizzleDB,
     private readonly outbox: OutboxService,
     private readonly pricing: PricingService,
     private readonly drivers: DriversService,
@@ -58,9 +62,12 @@ export class RidesService {
   ) {}
 
   async createRide(input: RequestRideInput): Promise<Ride> {
-    const ride = await this.dataSource.transaction(async (em) => {
-      const saved = await em.save(Ride, { ...input, status: 'REQUESTED' });
-      await this.outbox.write(em, {
+    const ride = await this.db.transaction(async (tx) => {
+      const [saved] = await tx
+        .insert(ridesTable)
+        .values({ ...input, status: 'REQUESTED' })
+        .returning();
+      await this.outbox.write(tx, {
         topic: TOPICS.RIDE_EVENTS,
         type: RideEventType.RIDE_REQUESTED,
         aggregateType: 'ride',
@@ -89,32 +96,46 @@ export class RidesService {
   }
 
   async getRide(rideId: string): Promise<Ride> {
-    const ride = await this.rideRepo.findOneBy({ id: rideId });
+    const [ride] = await this.db
+      .select()
+      .from(ridesTable)
+      .where(eq(ridesTable.id, rideId))
+      .limit(1);
     if (!ride) throw new NotFoundException(`Ride ${rideId} not found`);
     return ride;
   }
 
   async getActiveRidesForRider(riderId: string): Promise<Ride[]> {
-    return this.rideRepo.find({
-      where: {
-        riderId,
-        status: In([
-          'REQUESTED',
-          'MATCHING',
-          'ACCEPTED',
-          'ARRIVED',
-          'IN_PROGRESS',
-        ]),
-      },
-      order: { createdAt: 'DESC' },
-    });
+    return this.db
+      .select()
+      .from(ridesTable)
+      .where(
+        and(
+          eq(ridesTable.riderId, riderId),
+          inArray(ridesTable.status, [
+            'REQUESTED',
+            'MATCHING',
+            'ACCEPTED',
+            'ARRIVED',
+            'IN_PROGRESS',
+          ]),
+        ),
+      )
+      .orderBy(sql`${ridesTable.createdAt} DESC`);
   }
 
   async getActiveRideForDriver(driverId: string): Promise<Ride | null> {
-    return this.rideRepo.findOneBy({
-      driverId,
-      status: In(['ACCEPTED', 'ARRIVED', 'IN_PROGRESS']),
-    });
+    const [ride] = await this.db
+      .select()
+      .from(ridesTable)
+      .where(
+        and(
+          eq(ridesTable.driverId, driverId),
+          inArray(ridesTable.status, ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS']),
+        ),
+      )
+      .limit(1);
+    return ride ?? null;
   }
 
   async getHistoryForRider(
@@ -122,12 +143,18 @@ export class RidesService {
     limit = 20,
     offset = 0,
   ): Promise<Ride[]> {
-    return this.rideRepo.find({
-      where: { riderId, status: 'COMPLETED' },
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
+    return this.db
+      .select()
+      .from(ridesTable)
+      .where(
+        and(
+          eq(ridesTable.riderId, riderId),
+          eq(ridesTable.status, 'COMPLETED'),
+        ),
+      )
+      .orderBy(sql`${ridesTable.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset);
   }
 
   async transition(
@@ -143,40 +170,40 @@ export class RidesService {
     // The update is keyed on the observed status — two concurrent
     // transitions race on the DB row, exactly one wins, the loser gets a
     // Conflict instead of silently double-applying.
-    const updated = await this.dataSource.transaction(async (em) => {
-      const result = await em.update(
-        Ride,
-        { id: rideId, status: ride.status },
-        { ...patch, status: to },
-      );
-      if (!result.affected) {
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(ridesTable)
+        .set({ ...patch, status: to, updatedAt: new Date() })
+        .where(
+          and(eq(ridesTable.id, rideId), eq(ridesTable.status, ride.status)),
+        )
+        .returning();
+
+      if (!updated) {
         throw new ConflictException(
           `Ride ${rideId} changed concurrently (was ${ride.status})`,
         );
       }
 
-      const merged: Ride = { ...ride, ...patch, status: to };
-      await this.outbox.write(em, {
+      await this.outbox.write(tx, {
         topic: TOPICS.RIDE_EVENTS,
         type: eventType,
         aggregateType: 'ride',
-        aggregateId: merged.id,
+        aggregateId: updated.id,
         payload: {
-          rideId: merged.id,
-          riderId: merged.riderId,
-          driverId: merged.driverId,
-          status: merged.status,
-          rideType: merged.rideType,
-          totalFare: merged.totalFare ? Number(merged.totalFare) : undefined,
-          cancellationReason: merged.cancellationReason,
-          cancellationFee: Number(merged.cancellationFee),
+          rideId: updated.id,
+          riderId: updated.riderId,
+          driverId: updated.driverId,
+          status: updated.status,
+          rideType: updated.rideType,
+          totalFare: updated.totalFare ?? undefined,
+          cancellationReason: updated.cancellationReason,
+          cancellationFee: Number(updated.cancellationFee),
           occurredAt: new Date().toISOString(),
         },
       });
-      return merged;
+      return updated;
     });
-
-    return updated;
   }
 
   /** Driver arrived at pickup point. */

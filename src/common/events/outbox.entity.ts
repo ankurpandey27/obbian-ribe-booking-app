@@ -18,9 +18,11 @@ export type OutboxStatusValue =
 
 /**
  * Transactional outbox — the durable bridge between Postgres state changes
- * and the event broker. Written in the SAME transaction as the state change;
- * the relay publishes asynchronously (at-least-once). Consumers must be
- * idempotent on event.id.
+ * and the event broker.
+ *
+ * @deprecated Runtime access now goes through the Drizzle schema
+ * (`common/database/schema` → outboxEvents). This TypeORM entity remains
+ * only until migration wave 2 completes; do not add new usages.
  */
 @Entity('outbox_events')
 @Index('idx_outbox_dispatch', ['status', 'createdAt'])
