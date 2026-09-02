@@ -101,6 +101,12 @@ export class PaymentReceiptDto {
 export class RefundResultDto {
   @ApiProperty({ example: true })
   refunded: boolean;
+
+  @ApiProperty({
+    example: 450,
+    description: 'Actual amount refunded to the rider in rupees',
+  })
+  amount!: number;
 }
 
 export class WebhookResultDto {

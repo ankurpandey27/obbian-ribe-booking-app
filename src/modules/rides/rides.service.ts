@@ -773,19 +773,19 @@ export class RidesService {
           strict: false,
         });
         if (payments) {
-          const payment = await (
+          // refund() returns the actual disbursed amount — single source of
+          // truth. On success it is the captured payment amount; on idempotent
+          // replay (already refunded) it is 0. This guarantees the reported
+          // refundAmount always matches the money the gateway moved, with no
+          // recomputed estimate that could diverge.
+          const result = await (
             payments as {
-              getPayment(rideId: string): Promise<{ amount: number } | null>;
+              refund(
+                rideId: string,
+              ): Promise<{ refunded: boolean; amount: number }>;
             }
-          ).getPayment(rideId);
-          // Report the ACTUAL captured payment amount that will be refunded —
-          // not estimatedFare minus a fee, which can diverge from what the
-          // payment gateway refunds. The cancellation fee is recorded as a
-          // penalty separately; the refund returns the full captured amount.
-          refundAmount = payment ? Number(payment.amount) : 0;
-          await (
-            payments as { refund(rideId: string): Promise<unknown> }
           ).refund(rideId);
+          refundAmount = result?.amount ?? 0;
         }
       } catch (err) {
         this.logger.error(
@@ -796,8 +796,8 @@ export class RidesService {
 
     return {
       ride: cancelled,
-      // Refund amount matches what the payment gateway will actually return.
-      // 0 when no payment was captured (nothing to refund).
+      // Refund amount is exactly what payment gateway returned — never a
+      // recomputed estimate. 0 when no payment captured or refund is a replay.
       refundAmount,
     };
   }

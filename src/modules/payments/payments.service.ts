@@ -420,7 +420,7 @@ export class PaymentsService {
    */
   async refund(
     rideId: string,
-  ): Promise<{ refunded: boolean; alreadyRefunded?: boolean }> {
+  ): Promise<{ refunded: boolean; amount: number; alreadyRefunded?: boolean }> {
     const [payment] = await this.db
       .select()
       .from(paymentsTable)
@@ -431,7 +431,7 @@ export class PaymentsService {
     }
     if (payment.status === 'REFUNDED' || payment.status === 'REFUNDING') {
       // Already refunded or in flight — idempotent success, no gateway call.
-      return { refunded: true, alreadyRefunded: true };
+      return { refunded: true, amount: 0, alreadyRefunded: true };
     }
     if (payment.status !== 'COMPLETED') {
       throw new BadRequestException('Only completed payments can be refunded');
@@ -456,7 +456,7 @@ export class PaymentsService {
 
     if (!claimed) {
       // Lost the race — someone else claimed it between select and update.
-      return { refunded: true, alreadyRefunded: true };
+      return { refunded: true, amount: 0, alreadyRefunded: true };
     }
 
     // Deterministic idempotency reference for the gateway.
@@ -505,6 +505,9 @@ export class PaymentsService {
       payment.id,
     );
 
-    return { refunded: true };
+    // Return the actual disbursed amount — single source of truth so callers
+    // (ride cancel) report the money that actually moved, not a recomputed
+    // estimate that can diverge from the gateway refund.
+    return { refunded: true, amount: Number(payment.amount) };
   }
 }
