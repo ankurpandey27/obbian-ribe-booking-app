@@ -30,8 +30,17 @@ import { FraudService } from './fraud.service';
 import { RideStopsService } from './ride-stops.service';
 import { DriversService } from '../drivers/drivers.service';
 import { WalletLedgerService } from '../payments/wallet-ledger.service';
+import { GeoService } from '../../common/redis/geo.service';
 import { InjectRedis } from '../../common/redis/redis.decorator';
 import type Redis from 'ioredis';
+
+/**
+ * Pickup proximity fence (meters). A driver must be within this radius of the
+ * ride's pickup point to mark themselves arrived and generate a boarding code.
+ * Prevents a driver from minting a code (and appearing "arrived") while still
+ * far from the rider. ~200m balances GPS jitter against a meaningful distance.
+ */
+const PICKUP_ARRIVAL_RADIUS_M = 200;
 import {
   CancellationReasonValue,
   RideStatusValue,
@@ -75,6 +84,7 @@ export class RidesService {
   constructor(
     @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     @InjectRedis() private readonly redis: Redis,
+    private readonly geo: GeoService,
     private readonly moduleRef: ModuleRef,
     private readonly outbox: OutboxService,
     private readonly pricing: PricingService,
@@ -470,14 +480,67 @@ export class RidesService {
     return updated;
   }
 
-  /** Driver arrived at pickup point. Generates a one-time boarding code the rider reads to the driver. */
+  /**
+   * Driver arrived at pickup point. Generates a one-time boarding code the
+   * rider reads to the driver.
+   *
+   * GEO-FENCE: the driver must be within PICKUP_ARRIVAL_RADIUS_M of the ride's
+   * pickup coordinates. Prevents a driver from marking arrived (and minting a
+   * code) while still far from the rider. Uses the driver's last cached position
+   * in Redis (written on every location ping). If no position is cached yet
+   * (e.g. brand-new driver who never pinged), the check is skipped rather than
+   * blocking — the boarding code + rider-speaks-it model is the second guard.
+   */
   async driverArrive(rideId: string): Promise<Ride> {
-    const ride = await this.transition(rideId, 'ARRIVED', {
+    const ride = await this.getRide(rideId);
+    await this.assertDriverIsAtPickup(ride);
+    const arrived = await this.transition(rideId, 'ARRIVED', {
       arrivedAt: new Date(),
     });
     const code = RidesService.generateBoardingCode();
     await this.storeBoardingCode(rideId, code);
-    return ride;
+    return arrived;
+  }
+
+  /** Haversine distance in metres between two lat/lon points. */
+  private haversineM(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371000; // earth radius in metres
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  /**
+   * Verify the assigned driver is physically near the pickup point. Read-only
+   * (no state change) so it can safely precede the ARRIVED transition.
+   */
+  private async assertDriverIsAtPickup(ride: Ride): Promise<void> {
+    if (!ride.driverId) return; // not yet assigned — let the transition reject
+    const pos = await this.geo.getDriverPosition(ride.driverId);
+    if (!pos) return; // no cached position — skip, boarding code is the guard
+    const distM = this.haversineM(
+      pos.lat,
+      pos.lon,
+      ride.pickupLat,
+      ride.pickupLon,
+    );
+    if (distM > PICKUP_ARRIVAL_RADIUS_M) {
+      throw new ForbiddenException(
+        `Driver is ${Math.round(
+          distM,
+        )}m from pickup (max ${PICKUP_ARRIVAL_RADIUS_M}m). Move closer before marking arrived.`,
+      );
+    }
   }
 
   /** Read the active boarding code (for the rider to display). */
