@@ -113,3 +113,95 @@ export interface PaymentEventPayload {
   gatewayTransactionId?: string;
   failureReason?: string;
 }
+
+/* ----------------------------------------------------------------- */
+/* LEDGER EVENTS (topic: ledger-events)                               */
+/* Partition key: driverId — every entry for one wallet lands in the   */
+/* same partition, so a consumer replaying a driver's balance sees     */
+/* entries in the order they were written.                             */
+/* All amounts are INTEGER PAISE (never rupees, never float).          */
+/* ----------------------------------------------------------------- */
+
+export const LedgerEventType = {
+  LEDGER_ENTRY_WRITTEN: 'LEDGER_ENTRY_WRITTEN',
+  SETTLEMENT_LEDGERED: 'SETTLEMENT_LEDGERED',
+  SETTLEMENT_PAID: 'SETTLEMENT_PAID',
+  SETTLEMENT_FAILED: 'SETTLEMENT_FAILED',
+  /** Cached balance disagreed with the ledger replay — always a P1. */
+  BALANCE_DRIFT_DETECTED: 'BALANCE_DRIFT_DETECTED',
+} as const;
+
+export type LedgerEventTypeValue =
+  (typeof LedgerEventType)[keyof typeof LedgerEventType];
+
+export interface LedgerEntryEventPayload {
+  ledgerEntryId: string;
+  driverId: string;
+  entryType: string;
+  amountPaise: number;
+  balanceAfterPaise: number;
+  referenceType?: string;
+  referenceId?: string;
+  occurredAt: string;
+}
+
+export interface SettlementEventPayload {
+  settlementId: string;
+  driverId: string;
+  periodStart: string;
+  periodEnd: string;
+  rideCount: number;
+  grossPaise: number;
+  commissionPaise: number;
+  netPayoutPaise: number;
+  status: string;
+  payoutReference?: string;
+  failureReason?: string;
+  occurredAt: string;
+}
+
+export interface BalanceDriftEventPayload {
+  driverId: string;
+  /** Value stored on drivers.walletBalancePaise. */
+  cachedBalancePaise: number;
+  /** SUM(wallet_ledger.amountPaise) — the authoritative figure. */
+  ledgerBalancePaise: number;
+  driftPaise: number;
+  detectedAt: string;
+}
+
+/* ----------------------------------------------------------------- */
+/* COMPLIANCE EVENTS (topic: compliance-events)                       */
+/* Partition key: driverId. Consumed by matching (dispatch            */
+/* eligibility) and notifications (renewal reminders).                */
+/* ----------------------------------------------------------------- */
+
+export const ComplianceEventType = {
+  DOCUMENT_SUBMITTED: 'DOCUMENT_SUBMITTED',
+  DOCUMENT_VERIFIED: 'DOCUMENT_VERIFIED',
+  DOCUMENT_REJECTED: 'DOCUMENT_REJECTED',
+  DOCUMENT_EXPIRED: 'DOCUMENT_EXPIRED',
+  DOCUMENT_EXPIRING_SOON: 'DOCUMENT_EXPIRING_SOON',
+  /** Driver became dispatch-eligible: every required document is valid. */
+  DRIVER_COMPLIANCE_GRANTED: 'DRIVER_COMPLIANCE_GRANTED',
+  /** Driver lost eligibility — matching must stop offering them rides. */
+  DRIVER_COMPLIANCE_REVOKED: 'DRIVER_COMPLIANCE_REVOKED',
+} as const;
+
+export type ComplianceEventTypeValue =
+  (typeof ComplianceEventType)[keyof typeof ComplianceEventType];
+
+export interface ComplianceEventPayload {
+  driverId: string;
+  documentId?: string;
+  documentType?: string;
+  vehicleId?: string;
+  status?: string;
+  expiresAt?: string;
+  /** Populated on GRANTED/REVOKED so consumers need no second query. */
+  isComplianceVerified?: boolean;
+  /** Which required slots are missing/invalid on REVOKED. */
+  missingDocuments?: string[];
+  reason?: string;
+  occurredAt: string;
+}

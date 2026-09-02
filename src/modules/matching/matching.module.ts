@@ -1,15 +1,21 @@
 import { Module } from '@nestjs/common';
-import { MatchingService } from './services/matching.service';
-import { MatchingWorker } from './services/matching.worker';
-import { DriverRideActionsController } from './controllers/driver-ride-actions.controller';
+import { MatchingService } from './matching.service';
+import { MatchingWorker } from './workers/matching.worker';
+import { RideClaimCoordinator } from './ride-claim.coordinator';
+import { DriverRideActionsController } from './driver-ride-actions.controller';
 import { DriversModule } from '../drivers/drivers.module';
 import { RidesModule } from '../rides/rides.module';
-import { GeoService } from '../../common/redis/geo.service';
 
+/**
+ * Dispatch engine. Future `matching-svc`. GeoService comes from RedisModule.
+ *
+ * RideClaimCoordinator owns the atomic claim plus its pub/sub wake-up, keeping
+ * MatchingService focused on candidate selection and offer flow (ADR-015).
+ */
 @Module({
   imports: [DriversModule, RidesModule],
   controllers: [DriverRideActionsController],
-  providers: [MatchingService, MatchingWorker, GeoService],
+  providers: [MatchingService, MatchingWorker, RideClaimCoordinator],
   exports: [MatchingService],
 })
 export class MatchingModule {}

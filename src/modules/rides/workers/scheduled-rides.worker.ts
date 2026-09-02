@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QUEUE_SCHEDULED } from '../../../common/queues/queues.module';
-import { ScheduledRidesService } from '../services/scheduled-rides.service';
+import { ScheduledRidesService } from '../scheduled-rides.service';
 
 /**
  * ScheduledRidesWorker — fires delayed jobs for future-dated bookings.

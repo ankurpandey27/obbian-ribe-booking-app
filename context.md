@@ -16,7 +16,7 @@ payments, settlements. Modular monolith in NestJS, engineered as a **BASE**
 for 5M users / ~1M rides/day.
 
 - **Live API docs:** `/api/v1/docs` (Swagger, non-production only)
-- **Version:** see `VERSION` (currently 0.6.x)
+- **Version:** see `VERSION` (currently 0.8.x)
 - **License/status:** private, actively hardened
 
 ## 2. Tech stack
@@ -57,19 +57,19 @@ obbian-tech/
    ├─ common/                 # zero business logic (graduates to @app/shared)
    │  ├─ auth/                # global JwtAuthGuard, RolesGuard, @Public/@Roles/@CurrentUser
    │  ├─ database/            # TypeORM boot (migrations), DrizzleModule (runtime), schema/
-   │  │  └─ schema/           # ⭐ Drizzle tables + enums + schema.spec.ts integrity tests
+    │  │  └─ schema/           # Drizzle tables + enums
    │  ├─ events/              # EventBus (best-effort), OutboxService + relay worker (durable)
    │  ├─ filters/             # ApiErrorFilter → unified error envelope
    │  ├─ interceptors/        # RequestId, idempotency
    │  ├─ queues/              # BullMQ registration (matching/scheduled/payments/notifications)
-   │  ├─ redis/               # RedisModule, GeoService (geo index, heartbeats, freshness filter)
+    │  ├─ redis/               # RedisModule, GeoService, circuit breaker, throttling
+    │  ├─ observability/       # metrics listener, request context, logger, DB/HTTP binders
    │  └─ sms/, dto/, utils/
    ├─ modules/                # ⭐ one folder per domain = one future microservice
    │  ├─ auth/                # OTP send/verify, JWT issue/refresh-rotation, logout
    │  ├─ users/               # rider profile, saved locations
    │  ├─ drivers/             # captain onboarding, ONLINE status, GPS heartbeat, jump-validation
-   │  ├─ rides/               # ⭐ state machine (REQUESTED→…→COMPLETED/CANCELLED), request use-case,
-   │  │                       #   fraud guards, scheduled rides, RideParticipantGuard
+    │  ├─ rides/               # ⭐ state machine, fraud, scheduling, multi-stop, participant guard
    │  ├─ matching/            # geo candidates → ranked hedged offers → atomic accept claim
    │  ├─ pricing/             # fare configs, road-distance quotes (OSRM), H3-cell surge engine
    │  ├─ promos/              # atomic per-user promo redemption (Redis INCR + compensation)
@@ -77,8 +77,14 @@ obbian-tech/
    │  ├─ tracking/            # live position + ETA (30s cache), Socket.IO gateway
    │  ├─ ratings/             # aggregate rider/driver ratings from completed rides
    │  ├─ analytics/           # ops dashboard aggregates
-   │  ├─ notifications/       # FCM push / SMS (MSG91/Twilio) / SendGrid worker
-   │  └─ health/              # liveness + DB/Redis dependency probe
+    │  ├─ notifications/       # FCM push / SMS (MSG91/Twilio) / SendGrid worker
+    │  ├─ health/               # liveness + DB/Redis readiness probe
+    │  ├─ compliance/           # documents, vehicles, expiry gate
+    │  ├─ safety/               # SOS intake
+    │  ├─ ledger/               # driver wallet ledger and reconciliation
+    │  ├─ ops/                  # incidents and cancellation penalties
+    │  ├─ growth/               # referrals, incentives, PostGIS zones
+    │  └─ admin/                # ADMIN recovery and moderation
    ├─ shared/
    │  ├─ contracts/           # ports (e.g. USER_LOOKUP) — hexagonal seams
    │  ├─ events/              # topic names + event payload contracts
@@ -86,8 +92,8 @@ obbian-tech/
    └─ migrations/             # HAND-WRITTEN NNN-*.ts (001-init … 003-indexes+outbox)
 ```
 
-Every feature module follows the same internal layout:
-`controllers/ · services/ · dto/ · entities|guards|workers/ (as needed)`.
+Feature controller, service, and module files sit directly in the module folder;
+`dto/`, `entities/`, `guards/`, `workers/`, and `gateways/` stay nested.
 
 ## 4. Module → future microservice map
 
@@ -98,8 +104,12 @@ Every feature module follows the same internal layout:
 | matching | matching-service |
 | tracking | tracking-service |
 | payments + settlement | payment-service |
+| ledger | ledger-service |
 | pricing, promos | pricing-service |
-| ratings, analytics, notifications | consumers/read-models |
+| ratings, analytics | consumers/read-models |
+| compliance, safety, ops | ops/user-service |
+| growth | growth-service |
+| notifications | notification-service |
 
 Rule of thumb while coding: writes cross boundaries only via events
 (transactional outbox); reads may call exported services today.
@@ -129,6 +139,22 @@ Rule of thumb while coding: writes cross boundaries only via events
 - `POST /drivers/accept-ride` (atomic claim) · `POST /drivers/reject-ride`
 - `POST /drivers/rides/:rideId/{arrived|start|complete}` 🔒assigned driver
 
+**Agent surface (Roju voice/chat agent, ADR-00X):**
+- `POST /agent/rides/quote` · `POST /agent/rides/execute` (forwarded user JWT + optional X-Roju-* HMAC; idempotent by key; price-lock quote ids)
+
+**Safety:**
+- `POST /safety/sos` (durable safety_events + SAFETY_EVENTS outbox topic; ops fan-out consumer)
+- `POST|GET /ops/incidents/*` and `GET|POST /ops/penalties/*` (authenticated;
+  admin lifecycle actions are role-guarded)
+- `POST|GET|DELETE /notifications/devices`, `GET /notifications`, and channel
+  preference endpoints
+- `/growth/*` referrals, driver incentives, and admin zone management
+- `/admin/*` DLQ recovery, compliance queue, refunds, moderation, invoice gaps,
+  and ledger drift reports
+
+**Pricing extra:**
+- `GET /rides/surge?city=&lat=&lon` (current surge multiplier)
+
 **Payments:**
 - `POST /payments/initiate` · `POST /payments/verify` (owner-checked)
 - `GET /payments/:rideId` 🔒participants
@@ -155,7 +181,11 @@ Rule of thumb while coding: writes cross boundaries only via events
 ## 7. Data model (10 tables, all camelCase columns)
 
 `users` · `refresh_tokens` · `saved_locations` · `drivers` · `fare_configs` ·
-`rides` · `scheduled_rides` · `payments` · `promos` · `outbox_events`
+`rides` · `scheduled_rides` · `payments` · `promos` · `outbox_events` ·
+`ride_stops` · `ride_route_points` · `ride_reviews` · `wallet_ledger` ·
+`invoices` · `incidents` · `cancellation_penalties` · `user_devices` ·
+`notifications` · `referral_codes` · `referral_redemptions` ·
+`driver_incentives` · `areas` · `surge_zones_history`
 
 Enums (PG types): `user_role(RIDER/DRIVER/ADMIN)` ·
 `ride_type(CABX_SAVER/CABX/CABXL/COMFORT/AUTO/TWO_WHEELER)` ·
@@ -235,6 +265,7 @@ npm run migration:generate|run|revert
 5. Parameterized SQL only; validated DTOs only (whitelist enforced globally).
 6. Money: no float math; idempotent ops; Razorpay signatures verified server-side.
 7. Durable events only via outbox; never direct broker publish from request paths.
-8. `build + test + lint` green before finishing any task; add regression test for every bug fixed.
+8. `build + test + lint` green before finishing any task; verify every bug fix
+   with a throwaway script and delete it afterwards.
 9. Update CHANGELOG (every change) and ADR (architecture changes); bump VERSION.
 10. When in doubt about money, auth, or state transitions — STOP and ask.

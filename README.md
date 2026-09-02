@@ -16,7 +16,7 @@ product — target scale: **5M users / ~1M rides/day**.
 | Layer    | Tech                                                          |
 | -------- | ------------------------------------------------------------- |
 | Runtime  | Node.js 18+, NestJS 10, TypeScript                            |
-| Database | PostgreSQL 16 + PostGIS (TypeORM; Drizzle migration planned)  |
+| Database | PostgreSQL 16 + PostGIS (Drizzle runtime; TypeORM migrations only) |
 | Cache    | Redis 7 (ioredis) — geo index, heartbeats, offers, claims     |
 | Queues   | BullMQ (Redis-backed) — matching dispatch, scheduled rides    |
 | Events   | Transactional outbox → Kafka (brokerless mode supported)      |
@@ -38,6 +38,14 @@ payments    Razorpay orders/webhooks/refunds + driver settlement
 tracking    live position + ETA (Socket.IO gateway + REST fallback)
 ratings     aggregate rider/driver ratings
 analytics   ops dashboard aggregates
+health      liveness/readiness probes
+compliance  driver documents and vehicle eligibility
+safety      SOS intake
+ledger      append-only driver wallet and reconciliation
+ops         incidents and cancellation penalties
+growth      referrals, incentives, and PostGIS zones
+admin       ADMIN-only recovery and moderation surface
+notifications device registry, preferences, and in-app history
 ```
 
 Full boundary rules and extraction plan: [ARCHITECTURE.md §2](./ARCHITECTURE.md).
@@ -64,8 +72,8 @@ Demo login: `POST /auth/send-otp` with `+919000000000`, OTP `123456`
 | -------------------------- | ------------------------------------------ |
 | `npm run build`            | compile to `dist/`                         |
 | `npm run lint`             | ESLint (+prettier) over `src`              |
-| `npm test`                 | unit tests (jest)                          |
-| `npm run test:e2e`         | e2e suite                                  |
+| `npm test`                 | Jest verification gate (empty suite allowed) |
+| `npm run test:e2e`         | Jest e2e gate (empty suite allowed)         |
 | `npm run migration:run`    | apply pending migrations                   |
 | `npm run seed` / `seed:redis` | demo data (DB / geo pool)               |
 
@@ -85,4 +93,5 @@ Render (Node buildpack): build `npm ci --include=dev && npm run build`,
 start `npm run start:prod`. Migrations auto-run on boot (`migrationsRun`).
 Managed Postgres via `DATABASE_URL` (Neon), Redis via TLS envs (Upstash).
 Set `CORS_ORIGINS` when browser clients come online;
-`EVENTS_BROKER_ENABLED=true` once Kafka is provisioned.
+`EVENTS_BROKER_ENABLED=true` once Kafka is provisioned. Keep `METRICS_PORT`
+off public ingress because `/metrics` is intentionally unauthenticated.

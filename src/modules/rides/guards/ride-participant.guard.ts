@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { RidesService } from '../services/rides.service';
+import { RidesService } from '../rides.service';
 import { IS_PUBLIC_KEY } from '../../../common/auth/decorators';
 
 /**

@@ -5,7 +5,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { MapsService } from './services/maps.service';
+import { MapsService } from './maps.service';
 import { Public } from '../../common/auth/decorators';
 import {
   AddressResultDto,

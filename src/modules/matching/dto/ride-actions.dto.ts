@@ -52,3 +52,25 @@ export class RideActionStatusDto {
   @ApiPropertyOptional({ example: 718.5, description: 'Present on complete' })
   totalFare?: number;
 }
+
+/** Driver supplies the rider's boarding code to start the trip. */
+export class StartRideDto {
+  @ApiProperty({
+    example: '4821',
+    description: '4-digit pickup code the rider reads to the driver',
+  })
+  @IsString()
+  code!: string;
+}
+
+/** Arrive response — includes the boarding code the rider must share with the driver. */
+export class ArriveResultDto {
+  @ApiProperty({ enum: ['ARRIVED'] })
+  status: string;
+
+  @ApiProperty({
+    example: '4821',
+    description: 'One-time pickup code. Rider reads this to the driver.',
+  })
+  boardingCode: string;
+}

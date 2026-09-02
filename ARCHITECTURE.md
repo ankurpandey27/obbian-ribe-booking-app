@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **BASE v0.3** — modular monolith, microservice-extraction-ready.
+> Status: **BASE v0.8** — modular monolith, microservice-extraction-ready.
 > Design target: **5M users / ~1M rides/day within 3–4 months.**
 
 ## 1. System shape
@@ -25,19 +25,25 @@ Next.js web ──┼─► REST /api/v1 (Swagger) ──► NestJS modular mono
 | auth | OTP, JWT issue/refresh/rotation | user-service |
 | users | rider profiles, saved locations | user-service |
 | drivers | captain profiles, KYC, status, location | user-service |
-| trips (rides) | ride state machine, history | trip-service |
+| rides | ride state machine, history, multi-stop, scheduling | trip-service |
 | matching | candidate search, offers, atomic claim | matching-service |
 | tracking | live positions, ETA, WS gateway | tracking-service |
 | payments | orders, webhooks, settlement, refunds | payment-service |
-| wallets/subscriptions/settlement | money movement | payment-service |
+| ledger | append-only wallet, reconciliation | ledger-service |
 | pricing/promos | fare config, quotes, promos | shared pricing svc |
-| ratings/analytics/notifications | read models & fan-out | consumers |
+| ratings/analytics | read models | consumers |
+| compliance/safety/ops | regulatory and support cases | ops/user-service |
+| growth | referrals, incentives, geofenced zones | growth-service |
+| notifications | devices, preferences, in-app history, delivery | notification-service |
+| admin | privileged recovery and moderation | ops-service |
 
 **Boundary rules (enforced by review):**
 1. Modules communicate via services they import through module `exports` —
    never by reaching into another module's repositories.
 2. Durable facts are emitted only via the transactional outbox.
 3. `common/` holds zero business logic.
+4. Controller, service, and module files are flat in each module root; `dto/`,
+   `entities/`, `guards/`, `workers/`, and `gateways/` remain subfolders.
 
 ## 3. The ride state machine
 
@@ -69,6 +75,11 @@ findMatchableDrivers(lon, lat, radius, vehicleType):
 → no claim in window → CANCELLED(NO_DRIVER_FOUND); empty candidate set → instant cancel
 ```
 
+REST tracking is rate-limited per rider. Driver movement refreshes ETA through a
+rate-limited OSRM lookup, caches the result, and emits `eta-update` to the ride
+room. Multi-stop waiting is calculated in SQL from arrival/departure timestamps;
+skipped stops are not chargeable but retain waiting time.
+
 ## 5. Event delivery
 
 | Class of event | Path | Guarantee |
@@ -90,8 +101,10 @@ Consumers must be idempotent on `event.id`.
   200K concurrent captains ≈ 60 MB. Next scaling step: shard geo key per city.
 - **Connection pool**: capped (`max:20`) per instance; scale horizontally
   behind the ALB; PgBouncer before >50 instances.
-- **Known next steps**: Drizzle migration (ADR-002), H3 cell surge,
-  read-replica for analytics/ratings.
+- **Partitions**: daily `ride_route_points` and monthly `surge_zones_history`;
+  advisory-locked maintenance pre-creates and drops ranges.
+- **Observability**: private `METRICS_PORT`, bounded labels, request correlation,
+  and scrape-time dependency gauges.
 
 ## 7. Security model
 
@@ -100,6 +113,7 @@ Consumers must be idempotent on `event.id`.
 - Input: class-validator whitelist + forbidNonWhitelisted globally; all SQL
   parameterized (ORM or `$-placeholders`) — no string-built queries.
 - Payments: gateway signature verification, idempotency keys, ADMIN-only refunds.
+- Admin actions are role-guarded and written to the append-only audit log.
 - Headers: helmet; CORS allow-list; 64kb body cap; trust-proxy for real IPs.
 
 ## 8. Versioning

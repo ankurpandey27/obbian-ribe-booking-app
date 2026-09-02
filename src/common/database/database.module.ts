@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { PartitionMaintenanceService } from './partition-maintenance.service';
 
 /**
  * Database module — single Postgres instance (monolith), PostGIS enabled.
@@ -28,9 +29,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
             ? ['error', 'warn']
             : ['error'],
         ssl: config.get<string>('server.env') === 'production',
-        extra: { max: 20 },
+        extra: { max: 2 }, // boot-time migration DS: tiny pool; prod uses Drizzle
       }),
     }),
   ],
+  providers: [PartitionMaintenanceService],
+  exports: [PartitionMaintenanceService],
 })
 export class DatabaseModule {}

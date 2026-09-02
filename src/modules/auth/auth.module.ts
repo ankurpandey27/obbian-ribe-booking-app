@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { AuthController } from './controllers/auth.controller';
-import { AuthService } from './services/auth.service';
-import { OtpService } from './services/otp.service';
-import { TokenService } from './services/token.service';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { OtpService } from './otp.service';
+import { TokenService } from './token.service';
 import { UsersModule } from '../users/users.module';
 
+@Global()
 @Module({
   imports: [UsersModule, JwtModule.register({ global: true })],
   controllers: [AuthController],

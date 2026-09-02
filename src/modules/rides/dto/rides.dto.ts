@@ -5,10 +5,13 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ArrayMaxSize,
+  ValidateNested,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CancellationReasonValue,
@@ -47,6 +50,37 @@ export class RequestRideDto {
   @IsOptional()
   @MaxLength(20)
   promoCode?: string;
+
+  @ApiPropertyOptional({ type: () => [RideStopDto], maxItems: 5 })
+  @IsOptional()
+  @ArrayMaxSize(5)
+  @ValidateNested({ each: true })
+  @Type(() => RideStopDto)
+  stops?: RideStopDto[];
+}
+
+export class RideStopDto {
+  @ApiProperty({ example: 28.6139 })
+  @IsLatitude()
+  lat: number;
+
+  @ApiProperty({ example: 77.209 })
+  @IsLongitude()
+  lon: number;
+
+  @ApiPropertyOptional({ maxLength: 512 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  address?: string;
+}
+
+export class AddStopsDto {
+  @ApiProperty({ type: () => [RideStopDto], maxItems: 5 })
+  @ArrayMaxSize(5)
+  @ValidateNested({ each: true })
+  @Type(() => RideStopDto)
+  stops: RideStopDto[];
 }
 
 export class ScheduleRideDto {
@@ -181,6 +215,18 @@ export class RideDto {
   cancellationFee: number;
 }
 
+export class RideStopResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() stopOrder: number;
+  @ApiProperty() lat: number;
+  @ApiProperty() lon: number;
+  @ApiPropertyOptional() address?: string | null;
+  @ApiProperty({ enum: ['PENDING', 'ARRIVED', 'COMPLETED', 'SKIPPED'] })
+  status: string;
+  @ApiPropertyOptional() arrivedAt?: Date | null;
+  @ApiPropertyOptional() departedAt?: Date | null;
+}
+
 export class RideListResultDto {
   @ApiProperty({ type: [RideDto] })
   rides: RideDto[];
@@ -292,4 +338,23 @@ export class CancelRideResultDto {
 export class RateRideResultDto {
   @ApiProperty({ example: true })
   saved: boolean;
+}
+
+/** Pickup verification code response (rider-facing). */
+export class BoardingCodeDto {
+  @ApiProperty({ example: 'a1b2c3d4-...' })
+  rideId!: string;
+
+  @ApiProperty({
+    example: '4821',
+    nullable: true,
+    description: '4-digit code, or null if none active (expired/used)',
+  })
+  boardingCode!: string | null;
+
+  @ApiProperty({
+    example: 480,
+    description: 'Seconds until the code expires (0 if none active)',
+  })
+  expiresInSec!: number;
 }

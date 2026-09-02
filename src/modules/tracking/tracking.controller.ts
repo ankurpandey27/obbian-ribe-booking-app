@@ -8,15 +8,17 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { TrackingService } from './services/tracking.service';
+import { TrackingService } from './tracking.service';
 import { RideParticipantGuard } from '../rides/guards/ride-participant.guard';
 import { EtaDto, TrackingDto } from './dto/tracking.dto';
-import { ApiErrorDto } from '../../common/dto/api-error';
+import { ApiEnvelopeDto } from '../../common/dto/api-envelope.dto';
+import { CurrentUser } from '../../common/auth/current-user.decorator';
+import { JwtPayload } from '../auth/token.service';
 
 @ApiTags('tracking')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({
-  type: ApiErrorDto,
+  type: ApiEnvelopeDto,
   description: 'Missing/invalid token',
 })
 @Controller('rides')
@@ -30,9 +32,12 @@ export class TrackingController {
   })
   @ApiOkResponse({ type: TrackingDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
-  @ApiNotFoundResponse({ type: ApiErrorDto, description: 'Ride not found' })
-  async tracking(@Param('rideId') rideId: string): Promise<TrackingDto> {
-    return this.trackingService.getTracking(rideId);
+  @ApiNotFoundResponse({ type: ApiEnvelopeDto, description: 'Ride not found' })
+  async tracking(
+    @Param('rideId') rideId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<TrackingDto> {
+    return this.trackingService.getTracking(rideId, user.sub);
   }
 
   @Get(':rideId/eta')
@@ -40,9 +45,12 @@ export class TrackingController {
   @ApiOperation({ summary: 'ETA + distance (cached 30s)' })
   @ApiOkResponse({ type: EtaDto })
   @ApiParam({ name: 'rideId', example: 'a1b2c3d4-...' })
-  @ApiNotFoundResponse({ type: ApiErrorDto, description: 'Ride not found' })
-  async eta(@Param('rideId') rideId: string): Promise<EtaDto> {
-    const { eta } = await this.trackingService.getTracking(rideId);
+  @ApiNotFoundResponse({ type: ApiEnvelopeDto, description: 'Ride not found' })
+  async eta(
+    @Param('rideId') rideId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<EtaDto> {
+    const { eta } = await this.trackingService.getTracking(rideId, user.sub);
     return eta;
   }
 }

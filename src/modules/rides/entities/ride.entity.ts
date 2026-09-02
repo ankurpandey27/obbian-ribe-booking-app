@@ -85,6 +85,15 @@ export class Ride {
   @Column({ type: 'integer', default: 0 })
   durationMin: number;
 
+  @Column({ type: 'integer', nullable: true })
+  etaMinutes?: number;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  etaUpdatedAt?: Date;
+
+  @Column({ type: 'integer', default: 0 })
+  stopCount: number;
+
   @Column({ nullable: true })
   promoCode?: string;
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
@@ -92,7 +101,14 @@ export class Ride {
 
   @Column({
     type: 'enum',
-    enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+    enum: [
+      'PENDING',
+      'PROCESSING',
+      'COMPLETED',
+      'FAILED',
+      'REFUNDING',
+      'REFUNDED',
+    ],
     default: 'PENDING',
   })
   paymentStatus: PaymentStatusValue;

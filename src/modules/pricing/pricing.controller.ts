@@ -5,15 +5,19 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { PricingService } from './services/pricing.service';
-import { QuoteResult } from './services/pricing.service';
+import { PricingService } from './pricing.service';
+import { SurgeService } from './surge.service';
+import { QuoteResult } from './pricing.service';
 import { RideTypeValue } from '../../shared/types/common';
 import { Public } from '../../common/auth/decorators';
 
 @ApiTags('pricing')
 @Controller('rides')
 export class PricingController {
-  constructor(private readonly pricingService: PricingService) {}
+  constructor(
+    private readonly pricingService: PricingService,
+    private readonly surgeService: SurgeService,
+  ) {}
 
   @Get('quote')
   @Public()
@@ -66,5 +70,24 @@ export class PricingController {
       city,
       rideType ? [rideType] : undefined,
     );
+  }
+
+  @Get('surge')
+  @ApiOperation({ summary: 'Current surge multiplier for a pickup point' })
+  @ApiOkResponse({ schema: { example: { multiplier: 1.25 } } })
+  @ApiQuery({ name: 'city', example: 'Delhi', required: true })
+  @ApiQuery({ name: 'lat', type: Number, required: true })
+  @ApiQuery({ name: 'lon', type: Number, required: true })
+  async getSurge(
+    @Query('city') city: string,
+    @Query('lat') lat: string,
+    @Query('lon') lon: string,
+  ): Promise<{ multiplier: number }> {
+    const multiplier = await this.surgeService.getMultiplier(
+      city,
+      Number(lat),
+      Number(lon),
+    );
+    return { multiplier };
   }
 }

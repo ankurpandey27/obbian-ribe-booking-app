@@ -58,14 +58,40 @@ export class Driver {
   @Column({ type: 'decimal', precision: 5, scale: 2, default: 100.0 })
   acceptanceRate: number;
 
+  /**
+   * CACHE of the wallet_ledger tail — never the source of truth.
+   * Only WalletLedgerService writes these two; see ADR-012.
+   */
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   walletBalance: number;
+
+  /** Paise mirror of walletBalance — the value the ledger actually writes. */
+  @Column({ type: 'integer', default: 0 })
+  walletBalancePaise: number;
 
   @Column({ length: 20, nullable: true })
   bankAccount?: string;
 
   @Column({ nullable: true })
   upiId?: string;
+
+  /**
+   * Dispatch eligibility (migration 006). false blocks going ONLINE and
+   * excludes the driver from matching. Written only by
+   * DriverDocumentsService.recomputeEligibility().
+   */
+  @Column({ type: 'boolean', default: false })
+  isComplianceVerified: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  complianceCheckedAt?: Date;
+
+  /**
+   * Vehicle currently in service. Compliance is evaluated against THIS
+   * vehicle's documents — insurance on a retired vehicle is irrelevant.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  activeVehicleId?: string;
 
   @Column({ type: 'timestamptz', nullable: true })
   lastLocationUpdateAt?: Date;

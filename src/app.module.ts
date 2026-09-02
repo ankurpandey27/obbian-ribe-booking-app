@@ -1,15 +1,18 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { configFactory } from './config/configuration';
 import { DatabaseModule } from './common/database/database.module';
 import { DrizzleModule } from './common/database/drizzle.module';
-import { RedisModule } from './common/redis/redis.module';
+import { RedisModule, REDIS_CLIENT } from './common/redis/redis.module';
+import { RedisThrottlerStorage } from './common/redis/redis-throttler.storage';
+import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 import { KafkaModule } from './common/events/kafka.module';
 import { QueuesModule } from './common/queues/queues.module';
 import { CommonModule } from './common/common.module';
+import { ObservabilityModule } from './common/observability/observability.module';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { RolesGuard } from './common/auth/roles.guard';
 import { AuthModule } from './modules/auth/auth.module';
@@ -26,6 +29,13 @@ import { RatingsModule } from './modules/ratings/ratings.module';
 import { PromosModule } from './modules/promos/promos.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AgentModule } from './modules/agent/agent.module';
+import { SafetyModule } from './modules/safety/safety.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { OpsModule } from './modules/ops/ops.module';
+import { GrowthModule } from './modules/growth/growth.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -39,6 +49,7 @@ import { ConfigService } from '@nestjs/config';
     ScheduleModule.forRoot(),
 
     // Global infrastructure
+    ObservabilityModule,
     DatabaseModule,
     DrizzleModule,
     RedisModule,
@@ -46,13 +57,17 @@ import { ConfigService } from '@nestjs/config';
     QueuesModule,
     CommonModule,
     ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          ttl: config.get<number>('throttle.ttl', 60000),
-          limit: config.get<number>('throttle.limit', 100),
-        },
-      ],
+      inject: [ConfigService, REDIS_CLIENT],
+      imports: [RedisModule],
+      useFactory: (config: ConfigService, redis: unknown) => ({
+        throttlers: [
+          {
+            ttl: config.get<number>('throttle.ttl', 60000),
+            limit: config.get<number>('throttle.limit', 100),
+          },
+        ],
+        storage: new RedisThrottlerStorage(redis as never),
+      }),
     }),
 
     // Domain modules (each a future microservice)
@@ -70,11 +85,19 @@ import { ConfigService } from '@nestjs/config';
     PromosModule,
     NotificationsModule,
     AnalyticsModule,
+    AgentModule,
+    SafetyModule,
+    ComplianceModule,
+    LedgerModule,
+    OpsModule,
+    GrowthModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
   ],
 })
 export class AppModule {}

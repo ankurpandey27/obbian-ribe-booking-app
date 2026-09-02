@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QUEUE_PAYMENTS } from '../../../common/queues/queues.module';
-import { PaymentsService } from '../services/payments.service';
+import { PaymentsService } from '../payments.service';
 
 /**
  * Payment worker — creates Razorpay orders from the queue.

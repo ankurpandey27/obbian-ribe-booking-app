@@ -13,8 +13,8 @@
    users and a team of 10 engineers. No shortcuts "for now".
 2. **Match existing patterns before inventing new ones.** Look at how the
    nearest sibling module does it; copy its structure exactly.
-3. **Every behavior change ships with:** updated tests, a `CHANGELOG.md`
-   entry, and — if architectural — an ADR in `docs/adr/ADR.md`.
+3. **Every behavior change ships with:** throwaway verification, a
+   `CHANGELOG.md` entry, and — if architectural — an ADR in `docs/adr/ADR.md`.
 4. **When unsure, stop and ask.** Never guess money logic, auth logic,
    or state-machine transitions.
 
@@ -68,7 +68,7 @@
   Column names are camelCase strings matching the hand-written migrations.
   **Never bulk-edit schema files with regex** — column names live as string
   literals and empty names pass compile but break runtime
-  (guarded by `schema.spec.ts`; keep it passing).
+   (verified by the repository's throwaway schema checks).
 - Numeric money columns: `numeric(..., { mode: 'number' })`. Compute money in
   integers (paise) where possible; never float arithmetic on money.
 - Migrations are HAND-WRITTEN TS files in `src/migrations/NNN-*.ts`
@@ -190,12 +190,12 @@ event-publisher seam is the swap point later.
 
 ---
 
-## 9. Testing rules
+## 9. Verification rules
 
-- Unit tests for every pricing/matching/fraud/state-machine change — mock
-  Drizzle with the chain-mock pattern (`drizzleMock` in existing specs).
-- Any bug fix adds the regression test FIRST (see `schema.spec.ts` story).
-- New guards/decorators get structural tests.
+- Do not create or retain `*.spec.ts` or `*.test.ts` files. Verify behavior with
+  temporary scripts under `test/`, then delete those scripts before finishing.
+- Any bug fix is verified against the reported failure before the fix is kept.
+- New guards/decorators are verified structurally by a throwaway script.
 - `npm run build && npm test && npm run lint` must pass before every push.
   Lint has zero-error policy (one accepted warning in drizzle.module).
 - For journey-level changes (matching, payments), run the live e2e flow

@@ -240,9 +240,6 @@ async function main() {
       }
     }
     await fareRepo.upsert(fares, ['city', 'rideType']);
-    console.log(
-      `  fare configs: ${fares.length} (${CITIES.length} cities × ${RIDE_TYPES.length} types)`,
-    );
 
     /* 2. riders — 2 per city */
     const riders: Partial<User>[] = [];
@@ -311,7 +308,6 @@ async function main() {
       }
     }
     await driverRepo.upsert(drivers, ['userId']);
-    console.log(`  riders: ${riders.length}  drivers: ${drivers.length}`);
 
     /* 4. Redis — geo pool + heartbeat + cached location per driver */
     for (const { userId, lon, lat } of geo) {
@@ -323,10 +319,8 @@ async function main() {
         JSON.stringify({ lat, lon, timestamp: Date.now() }),
       );
     }
-    console.log(`  redis: ${geo.length} drivers in geo pool + heartbeats`);
 
-    /* 5. promos */
-    const now = new Date();
+    /* 5. promos */ const now = new Date();
     const yearFromNow = new Date(now.getTime() + 365 * 24 * 3600 * 1000);
     await promoRepo.upsert(
       [
@@ -360,9 +354,6 @@ async function main() {
       ] as Promo[],
       ['code'],
     );
-    console.log(
-      '  promos: WELCOME20 (20% off, max ₹100), FIRST50 (50% off, max ₹250), DEMO10 (10% off, max ₹50)',
-    );
 
     /* 6. saved locations — HOME + WORK per demo rider */
     const riderPhonesAll = Array.from({ length: 16 }, (_, i) => RIDER_PHONE(i));
@@ -392,29 +383,13 @@ async function main() {
       );
     }
     await savedRepo.save(saved as SavedLocation[]);
-    console.log(
-      `  saved locations: ${saved.length} (HOME+WORK × ${demoRiders.length} riders)`,
-    );
 
-    console.log('\nSeed complete. Demo login (OTP_PROVIDER=dev → otp 123456):');
-    console.log('  riders:');
-    for (const [i, city] of CITIES.entries()) {
-      console.log(
-        `    ${city.name.padEnd(10)} ${RIDER_PHONE(i * 2)} (${RIDER_NAMES[i * 2][0]} ${RIDER_NAMES[i * 2][1]}) / ${RIDER_PHONE(i * 2 + 1)} (${RIDER_NAMES[i * 2 + 1][0]} ${RIDER_NAMES[i * 2 + 1][1]})`,
-      );
-    }
-    console.log('  drivers:');
-    let phoneIdx = 0;
-    for (const city of CITIES) {
-      const nums: string[] = [];
-      for (let k = 0; k < city.drivers.length; k += 1) {
-        nums.push(DRIVER_PHONE(phoneIdx));
-        phoneIdx += 1;
-      }
-      console.log(
-        `    ${city.name.padEnd(10)} ${nums.join(', ')} (${city.drivers.join('/')}, ONLINE)`,
-      );
-    }
+    console.log(
+      `\nSeed complete: ${fares.length} fare configs, ${riders.length} riders, ${drivers.length} drivers (ONLINE + geo pool), 3 promos, ${saved.length} saved locations.`,
+    );
+    console.log(
+      'Demo login: POST /auth/send-otp { phone } → POST /auth/verify-otp { phone, otp: "123456" } — riders +91 90000000xx, drivers +91 90100000xx.',
+    );
   } finally {
     await redis.quit();
     await ds.destroy();

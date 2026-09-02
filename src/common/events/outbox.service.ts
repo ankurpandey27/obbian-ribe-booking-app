@@ -1,11 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { Producer } from 'kafkajs';
 import { DRIZZLE_DB, DrizzleDB } from '../database/drizzle.module';
 import { outboxEvents } from '../database/schema';
 import { DomainEvent, TopicName } from '../../shared/events/topics';
 import { KAFKA_PRODUCER } from './kafka.module';
+import { MetricsService } from '../observability/metrics.service';
 
 export interface OutboxWrite {
   topic: TopicName;
@@ -43,6 +44,7 @@ export class OutboxService {
     @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     @Inject(KAFKA_PRODUCER) private readonly producer: Producer,
     config: ConfigService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {
     this.brokerEnabled =
       config.get<string>('events.brokerEnabled', 'false') === 'true';
@@ -59,6 +61,48 @@ export class OutboxService {
       payload: evt.payload,
       status: 'PENDING',
     });
+  }
+
+  /**
+   * Read-side for delivery workers (agent webhook bridge): ride-lifecycle
+   * rows newer than `since`, oldest first. Infra read — no business logic.
+   */
+  async listRideEventsSince(
+    since: Date,
+    limit = 25,
+  ): Promise<
+    Array<{
+      id: string;
+      eventType: string;
+      aggregateId: string;
+      payload: Record<string, unknown>;
+      createdAt: Date;
+    }>
+  > {
+    const rows = await this.db
+      .select({
+        id: outboxEvents.id,
+        eventType: outboxEvents.type,
+        aggregateId: outboxEvents.aggregateId,
+        payload: outboxEvents.payload,
+        createdAt: outboxEvents.createdAt,
+      })
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.aggregateType, 'ride'),
+          gt(outboxEvents.createdAt, since),
+        ),
+      )
+      .orderBy(asc(outboxEvents.createdAt))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      eventType: r.eventType,
+      aggregateId: r.aggregateId,
+      payload: r.payload ?? {},
+      createdAt: r.createdAt,
+    }));
   }
 
   /**
@@ -124,6 +168,7 @@ export class OutboxService {
         .update(outboxEvents)
         .set({ status: 'PUBLISHED', publishedAt: new Date(), lastError: null })
         .where(eq(outboxEvents.id, row.id));
+      this.metrics?.recordRelayResult('published');
     } catch (err) {
       const attempts = row.attempts + 1;
       const dead = attempts >= this.maxAttempts;
@@ -136,6 +181,7 @@ export class OutboxService {
         })
         .where(eq(outboxEvents.id, row.id))
         .catch(() => undefined);
+      this.metrics?.recordRelayResult(dead ? 'parked' : 'retried');
       this.logger.error(
         `outbox dispatch failed (${attempts}/${this.maxAttempts}) ` +
           `event=${row.type} agg=${row.aggregateId}: ${(err as Error).message}`,
