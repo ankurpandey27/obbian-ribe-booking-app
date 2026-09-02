@@ -493,7 +493,20 @@ export class RidesService {
    */
   async driverArrive(rideId: string): Promise<Ride> {
     const ride = await this.getRide(rideId);
+    // GEO-FENCE: must hold on every call, including re-arrive (code rotation).
     await this.assertDriverIsAtPickup(ride);
+
+    // RECOVERY: if already ARRIVED (driver exhausted/expired their boarding
+    // code), rotate the code instead of failing the transition — ARRIVED →
+    // ARRIVED is not a valid state-machine edge, so a naive transition would
+    // brick the ride. Re-running the geo-fence here is intentional: a driver
+    // who left the pickup area and comes back must prove proximity again.
+    if (ride.status === 'ARRIVED') {
+      const code = RidesService.generateBoardingCode();
+      await this.storeBoardingCode(rideId, code);
+      return ride;
+    }
+
     const arrived = await this.transition(rideId, 'ARRIVED', {
       arrivedAt: new Date(),
     });
@@ -750,6 +763,7 @@ export class RidesService {
     // gateway. Lazy-resolved via ModuleRef to avoid a module cycle (payments
     // already imports rides). Best-effort: a failed refund must not fail the
     // cancel — it is logged and surfaced for ops intervention.
+    let refundAmount = 0;
     if (cancelled.paymentStatus === 'COMPLETED') {
       try {
         // ModuleRef.get with a string token resolves the singleton from the
@@ -759,6 +773,16 @@ export class RidesService {
           strict: false,
         });
         if (payments) {
+          const payment = await (
+            payments as {
+              getPayment(rideId: string): Promise<{ amount: number } | null>;
+            }
+          ).getPayment(rideId);
+          // Report the ACTUAL captured payment amount that will be refunded —
+          // not estimatedFare minus a fee, which can diverge from what the
+          // payment gateway refunds. The cancellation fee is recorded as a
+          // penalty separately; the refund returns the full captured amount.
+          refundAmount = payment ? Number(payment.amount) : 0;
           await (
             payments as { refund(rideId: string): Promise<unknown> }
           ).refund(rideId);
@@ -772,12 +796,9 @@ export class RidesService {
 
     return {
       ride: cancelled,
-      // Only report a refund amount when money was actually taken; otherwise
-      // the "refund" is 0 (no payment, no money to return).
-      refundAmount:
-        cancelled.paymentStatus === 'COMPLETED'
-          ? Number(cancelled.estimatedFare) - fee
-          : 0,
+      // Refund amount matches what the payment gateway will actually return.
+      // 0 when no payment was captured (nothing to refund).
+      refundAmount,
     };
   }
 }
