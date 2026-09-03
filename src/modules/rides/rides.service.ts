@@ -25,14 +25,15 @@ import { PricingService } from '../pricing/pricing.service';
 import { SurgeService } from '../pricing/surge.service';
 import { FareBreakdownService } from '../pricing/fare-breakdown.service';
 import { InvoiceService } from '../pricing/invoice.service';
+import { GeoService } from '../../common/redis/geo.service';
 import { PromosService } from '../promos/promos.service';
 import { FraudService } from './fraud.service';
 import { RideStopsService } from './ride-stops.service';
 import { DriversService } from '../drivers/drivers.service';
 import { WalletLedgerService } from '../payments/wallet-ledger.service';
-import { GeoService } from '../../common/redis/geo.service';
 import { InjectRedis } from '../../common/redis/redis.decorator';
 import type Redis from 'ioredis';
+import { CatalogService } from '../catalog/catalog.service';
 
 /**
  * Pickup proximity fence (meters). A driver must be within this radius of the
@@ -44,7 +45,6 @@ const PICKUP_ARRIVAL_RADIUS_M = 200;
 import {
   CancellationReasonValue,
   RideStatusValue,
-  RideTypeValue,
 } from '../../shared/types/common';
 import { toPaise, toRupees } from '../../shared/money';
 import { MetricsService } from '../../common/observability/metrics.service';
@@ -61,7 +61,7 @@ export interface RequestRideInput {
   pickupLon: number;
   dropoffLat: number;
   dropoffLon: number;
-  rideType: RideTypeValue;
+  rideType: string;
   city: string;
   estimatedFare: number;
   distanceKm: number;
@@ -99,6 +99,7 @@ export class RidesService {
     private readonly penalties: CancellationPenaltiesService,
     private readonly incentives: DriverIncentivesService,
     private readonly referrals: ReferralsService,
+    private readonly catalog: CatalogService,
     @InjectQueue(QUEUE_MATCHING) private readonly matchingQueue: Queue,
     @Optional() private readonly metrics?: MetricsService,
   ) {}
@@ -198,7 +199,7 @@ export class RidesService {
       pickupLon: number;
       dropoffLat: number;
       dropoffLon: number;
-      rideType: RideTypeValue;
+      rideType: string;
       city?: string;
       promoCode?: string;
       stops?: Array<{ lat: number; lon: number; address?: string }>;
@@ -210,6 +211,15 @@ export class RidesService {
     estimatedTime: number | undefined;
   }> {
     const city = dto.city ?? 'Delhi';
+
+    // CATALOG VALIDATION: rideType is no longer an enum — validate it against
+    // the active catalog for the request city. Rejects unknown/inactive codes.
+    const activeCodes = await this.catalog.getActiveCategoryCodes(city);
+    if (!activeCodes.includes(dto.rideType)) {
+      throw new BadRequestException(
+        `Unknown or unavailable ride category '${dto.rideType}' for city ${city}. Active: ${activeCodes.join(', ')}`,
+      );
+    }
 
     // Fraud guard, fare config and route quote are independent — fan out.
     const [config, quote] = await Promise.all([

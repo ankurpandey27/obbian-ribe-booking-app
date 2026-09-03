@@ -1,14 +1,16 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
   timestamp,
-  jsonb,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -20,7 +22,6 @@ import {
   paymentMethod,
   paymentStatus,
   rideStatus,
-  rideType,
   userRole,
 } from './enums';
 
@@ -123,7 +124,7 @@ export const drivers = pgTable(
       .unique(),
     vehicleModel: varchar('vehicleModel', { length: 100 }),
     vehicleColor: varchar('vehicleColor', { length: 20 }),
-    vehicleType: rideType('vehicleType').notNull(),
+    vehicleType: varchar('vehicle_type', { length: 32 }).notNull(),
     status: driverStatus('status').notNull().default('OFFLINE'),
     rating: numeric('rating', { precision: 3, scale: 2, mode: 'number' })
       .notNull()
@@ -203,7 +204,9 @@ export const rides = pgTable(
     driverId: uuid('driverId').references(() => users.id, {
       onDelete: 'set null',
     }),
-    rideType: rideType('rideType').notNull(),
+    // Catalog-driven: references ride_categories.code. Changed from enum to
+    // varchar so new categories need no DDL change.
+    rideType: varchar('ride_type', { length: 32 }).notNull(),
     status: rideStatus('status').notNull().default('REQUESTED'),
     pickupLat: doublePrecision('pickupLat').notNull(),
     pickupLon: doublePrecision('pickupLon').notNull(),
@@ -311,7 +314,7 @@ export const scheduledRides = pgTable(
     pickupLon: doublePrecision('pickupLon').notNull(),
     dropoffLat: doublePrecision('dropoffLat').notNull(),
     dropoffLon: doublePrecision('dropoffLon').notNull(),
-    rideType: rideType('rideType').notNull(),
+    rideType: varchar('ride_type', { length: 32 }).notNull(),
     city: varchar('city', { length: 50 }).notNull().default('Delhi'),
     scheduledFor: timestamp('scheduledFor', { withTimezone: true }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('PENDING'),
@@ -404,7 +407,9 @@ export const fareConfigs = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     city: varchar('city', { length: 50 }).notNull(),
-    rideType: rideType('rideType').notNull(),
+    // Catalog-driven: references ride_categories.code. Changed from enum to
+    // varchar so new categories (SHE_SHARE, BIKE, …) need no DDL change.
+    rideType: varchar('ride_type', { length: 32 }).notNull(),
     baseFare: numeric('baseFare', { precision: 10, scale: 2, mode: 'number' })
       .notNull()
       .default(50),
@@ -538,3 +543,97 @@ export const safetyEvents = pgTable(
       .where(sql`status <> 'RESOLVED'`),
   ],
 );
+
+// ── SERVICE & RIDE-CATEGORY CATALOG (Module 1) ─────────────────────────────
+// Replaces the hardcoded rideType enum with a DB-backed, city-scoped,
+// localized, icon-bearing catalog that fully drives the FE.
+
+export const services = pgTable(
+  'services',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: varchar('code', { length: 32 }).notNull().unique(),
+    displayName: jsonb('display_name')
+      .notNull()
+      .$type<Record<string, string>>(),
+    iconUrl: varchar('icon_url', { length: 512 }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('IDX_services_active_sort').on(t.isActive, t.sortOrder)],
+);
+
+export const rideCategories = pgTable(
+  'ride_categories',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: varchar('code', { length: 32 }).notNull().unique(),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    displayName: jsonb('display_name')
+      .notNull()
+      .$type<Record<string, string>>(),
+    description: jsonb('description').$type<Record<string, string>>(),
+    iconUrl: varchar('icon_url', { length: 512 }),
+    thumbnailUrl: varchar('thumbnail_url', { length: 512 }),
+    capacity: integer('capacity').notNull().default(4),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    flags: jsonb('flags')
+      .notNull()
+      .$type<Record<string, boolean>>()
+      .default({}),
+    vehicleClass: varchar('vehicle_class', { length: 32 }),
+    etaFactor: numeric('eta_factor', { precision: 4, scale: 2, mode: 'number' })
+      .notNull()
+      .default(1.0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('IDX_ride_categories_service').on(t.serviceId),
+    index('IDX_ride_categories_active_sort').on(t.isActive, t.sortOrder),
+  ],
+);
+
+export const rideCategoryCities = pgTable(
+  'ride_category_cities',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    rideCategoryId: uuid('ride_category_id')
+      .notNull()
+      .references(() => rideCategories.id, { onDelete: 'cascade' }),
+    city: varchar('city', { length: 50 }).notNull(),
+    isAvailable: boolean('is_available').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('UQ_ride_category_city').on(t.rideCategoryId, t.city),
+    index('IDX_ride_category_cities_city').on(t.city, t.isAvailable),
+  ],
+);
+
+export const catalogVersions = pgTable('catalog_versions', {
+  scope: varchar('scope', { length: 50 }).notNull().primaryKey(),
+  version: bigint('version', { mode: 'number' }).notNull().default(1),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

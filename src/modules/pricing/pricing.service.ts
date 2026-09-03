@@ -6,13 +6,14 @@ import { DRIZZLE_DB, DrizzleDB } from '../../common/database/drizzle.module';
 import { fareConfigs } from '../../common/database/schema';
 import { MapsService } from '../maps/maps.service';
 import { SurgeService } from './surge.service';
-import { RideTypeValue } from '../../shared/types/common';
+import { CatalogService } from '../catalog/catalog.service';
 
 export class QuoteOption {
   @ApiProperty({
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
+    example: 'CABX',
+    description: 'Ride category code from the catalog',
   })
-  rideType: RideTypeValue;
+  rideType!: string;
 
   @ApiProperty({ example: 718.5, description: 'Estimated fare in INR' })
   fare: number;
@@ -65,6 +66,7 @@ export class PricingService {
     @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly maps: MapsService,
     private readonly surge: SurgeService,
+    private readonly catalog: CatalogService,
   ) {}
 
   async getQuote(
@@ -73,7 +75,7 @@ export class PricingService {
     dropoffLat: number,
     dropoffLon: number,
     city: string,
-    rideTypes?: RideTypeValue[],
+    rideTypes?: string[],
   ): Promise<QuoteResult> {
     const route = await this.maps.getRoute(
       pickupLat,
@@ -94,15 +96,17 @@ export class PricingService {
       throw new NotFoundException(`No fare config for city: ${city}`);
     }
 
-    const options: QuoteOption[] = configs
-      .sort((a, b) => Number(a.baseFare) - Number(b.baseFare))
-      .map((c) => ({
-        rideType: c.rideType,
-        baseFare: Number(c.baseFare),
-        fare: this.calculateFare(c, route.distanceKm, route.durationMin),
-        etaMinutes: this.estimateEta(route.durationMin, c.rideType),
-        surgeMultiplier: Number(c.surgeMultiplier),
-      }));
+    const options: QuoteOption[] = await Promise.all(
+      configs
+        .sort((a, b) => Number(a.baseFare) - Number(b.baseFare))
+        .map(async (c) => ({
+          rideType: c.rideType,
+          baseFare: Number(c.baseFare),
+          fare: this.calculateFare(c, route.distanceKm, route.durationMin),
+          etaMinutes: await this.estimateEta(route.durationMin, c.rideType),
+          surgeMultiplier: Number(c.surgeMultiplier),
+        })),
+    );
 
     // Dynamic surge layered on top of the config multiplier (per pickup cell).
     const surgeMultiplier = await this.surge.getMultiplier(
@@ -146,7 +150,7 @@ export class PricingService {
     return Math.round(surged * 2) / 2; // nearest ₹0.50
   }
 
-  async getConfig(city: string, rideType: RideTypeValue): Promise<FareConfig> {
+  async getConfig(city: string, rideType: string): Promise<FareConfig> {
     const [config] = await this.db
       .select()
       .from(fareConfigs)
@@ -163,15 +167,15 @@ export class PricingService {
     return config;
   }
 
-  private estimateEta(durationMin: number, rideType: RideTypeValue): number {
-    const factor: Record<RideTypeValue, number> = {
-      CABX_SAVER: 0.9,
-      CABX: 0.9,
-      CABXL: 0.95,
-      COMFORT: 0.95,
-      AUTO: 1.1,
-      TWO_WHEELER: 1.0,
-    };
-    return Math.max(1, Math.round(durationMin * (factor[rideType] ?? 1)));
+  /**
+   * ETA factor is now catalog-driven (ride_categories.eta_factor) instead of a
+   * hardcoded map. Falls back to 1.0 if the category is not found.
+   */
+  private async estimateEta(
+    durationMin: number,
+    categoryCode: string,
+  ): Promise<number> {
+    const factor = await this.catalog.getEtaFactor(categoryCode);
+    return Math.max(1, Math.round(durationMin * factor));
   }
 }

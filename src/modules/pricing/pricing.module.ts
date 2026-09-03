@@ -6,6 +6,7 @@ import { FareBreakdownService } from './fare-breakdown.service';
 import { InvoiceService } from './invoice.service';
 import { MapsModule } from '../maps/maps.module';
 import { GrowthModule } from '../growth/growth.module';
+import { CatalogModule } from '../catalog/catalog.module';
 
 /**
  * Pricing + billing artefacts. Future `pricing-svc` seam.
@@ -15,7 +16,7 @@ import { GrowthModule } from '../growth/growth.module';
  * transition (ADR-014) �?" a ride cannot be completed without its receipt.
  */
 @Module({
-  imports: [MapsModule, GrowthModule],
+  imports: [MapsModule, GrowthModule, CatalogModule],
   controllers: [PricingController],
   providers: [
     PricingService,

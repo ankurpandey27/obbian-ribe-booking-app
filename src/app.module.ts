@@ -36,6 +36,7 @@ import { LedgerModule } from './modules/ledger/ledger.module';
 import { OpsModule } from './modules/ops/ops.module';
 import { GrowthModule } from './modules/growth/growth.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -92,6 +93,7 @@ import { ConfigService } from '@nestjs/config';
     OpsModule,
     GrowthModule,
     AdminModule,
+    CatalogModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

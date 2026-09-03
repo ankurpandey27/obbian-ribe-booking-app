@@ -1,9 +1,11 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn, Unique } from 'typeorm';
-import { RideTypeValue } from '../../../shared/types/common';
 
 /**
  * Fare config — one row per (city, rideType). DB-driven so ops can tune
  * pricing without deploys. All amounts in INR.
+ *
+ * rideType references ride_categories.code (catalog-driven). Changed from enum
+ * to varchar so new categories need no DDL change.
  */
 @Entity('fare_configs')
 @Unique(['city', 'rideType'])
@@ -15,11 +17,8 @@ export class FareConfig {
   @Column({ length: 50 })
   city: string;
 
-  @Column({
-    type: 'enum',
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
-  })
-  rideType: RideTypeValue;
+  @Column({ length: 32 })
+  rideType: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 50 })
   baseFare: number;

@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DriverStatusValue, RideTypeValue } from '../../../shared/types/common';
+import { DriverStatusValue } from '../../../shared/types/common';
 
 export class RegisterDriverDto {
   @ApiProperty({ example: 'DL-04201145678' })
@@ -35,10 +35,12 @@ export class RegisterDriverDto {
   vehicleColor?: string;
 
   @ApiProperty({
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
+    example: 'CABX',
+    description: 'Vehicle class code. See GET /catalog for active codes.',
   })
-  @IsEnum(['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'])
-  vehicleType: RideTypeValue;
+  @IsString()
+  @MaxLength(32)
+  vehicleType: string;
 
   @ApiPropertyOptional({ example: 'upi@bank' })
   @IsOptional()
@@ -77,10 +79,8 @@ export class DriverRegisterResultDto {
   @ApiProperty({ enum: ['OFFLINE', 'ONLINE', 'ON_RIDE'], example: 'OFFLINE' })
   status: DriverStatusValue;
 
-  @ApiProperty({
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
-  })
-  vehicleType: RideTypeValue;
+  @ApiProperty({ example: 'CABX', description: 'Vehicle class code' })
+  vehicleType: string;
 
   @ApiProperty({
     example: 'Driver profile created. Re-login to pick up the DRIVER role.',
@@ -89,10 +89,8 @@ export class DriverRegisterResultDto {
 }
 
 export class DriverVehicleDto {
-  @ApiProperty({
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
-  })
-  type: RideTypeValue;
+  @ApiProperty({ example: 'CABX', description: 'Vehicle class code' })
+  type: string;
 
   @ApiPropertyOptional({ example: 'Maruti Suzuki Dzire' })
   model?: string;

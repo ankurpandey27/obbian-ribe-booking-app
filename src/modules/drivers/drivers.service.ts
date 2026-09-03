@@ -11,7 +11,7 @@ import { DRIZZLE_DB, DrizzleDB } from '../../common/database/drizzle.module';
 import { drivers as driversTable, users } from '../../common/database/schema';
 import { Driver } from './entities/driver.entity';
 import { GeoService } from '../../common/redis/geo.service';
-import { DriverStatusValue, RideTypeValue } from '../../shared/types/common';
+import { DriverStatusValue } from '../../shared/types/common';
 import { RegisterDriverDto } from './dto/drivers.dto';
 
 const HEARTBEAT_TTL_SECONDS = 90;
@@ -208,7 +208,7 @@ export class DriversService {
     lon: number,
     lat: number,
     radiusKm: number,
-    vehicleType: RideTypeValue,
+    vehicleType: string,
     limit = 20,
   ): Promise<Driver[]> {
     const geoIds = await this.geo.findNearbyDriverIds(

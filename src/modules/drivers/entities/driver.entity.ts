@@ -9,7 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { DriverStatusValue, RideTypeValue } from '../../../shared/types/common';
+import { DriverStatusValue } from '../../../shared/types/common';
 
 @Entity('drivers')
 export class Driver {
@@ -32,11 +32,10 @@ export class Driver {
   @Column({ length: 20, nullable: true })
   vehicleColor?: string;
 
-  @Column({
-    type: 'enum',
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
-  })
-  vehicleType: RideTypeValue;
+  // Catalog-driven: references ride_categories.vehicle_class. Changed from
+  // enum to varchar so new vehicle classes need no DDL change.
+  @Column({ length: 32 })
+  vehicleType: string;
 
   @Index()
   @Column({

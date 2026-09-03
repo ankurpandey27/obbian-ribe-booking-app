@@ -11,7 +11,6 @@ import {
   PaymentMethodValue,
   PaymentStatusValue,
   RideStatusValue,
-  RideTypeValue,
 } from '../../../shared/types/common';
 
 @Index('idx_rides_rider_status_created', {
@@ -31,11 +30,10 @@ export class Ride {
   @Column('uuid', { nullable: true })
   driverId?: string;
 
-  @Column({
-    type: 'enum',
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
-  })
-  rideType: RideTypeValue;
+  // Catalog-driven: references ride_categories.code. Changed from enum to
+  // varchar so new categories (SHE_SHARE, BIKE, …) need no DDL change.
+  @Column({ length: 32 })
+  rideType: string;
 
   @Index()
   @Column({

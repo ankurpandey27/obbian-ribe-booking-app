@@ -15,7 +15,7 @@ import {
   DriverResponseType,
   OfferEventType,
 } from '../../shared/events/contracts';
-import { RideTypeValue } from '../../shared/types/common';
+
 import { Driver } from '../drivers/entities/driver.entity';
 import { RideClaimCoordinator } from './ride-claim.coordinator';
 import { MetricsService } from '../../common/observability/metrics.service';
@@ -115,7 +115,7 @@ export class MatchingService {
     rideId: string,
     pickupLat: number,
     pickupLon: number,
-    rideType: RideTypeValue,
+    rideType: string,
     estimatedFare: number,
   ): Promise<void> {
     const startedAt = process.hrtime.bigint();
@@ -142,7 +142,7 @@ export class MatchingService {
     rideId: string,
     pickupLat: number,
     pickupLon: number,
-    rideType: RideTypeValue,
+    rideType: string,
     estimatedFare: number,
   ): Promise<'matched' | 'no_driver'> {
     const candidates = await this.driversService.findMatchableDrivers(

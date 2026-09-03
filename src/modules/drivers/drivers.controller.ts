@@ -138,7 +138,7 @@ export class DriversController {
       name: undefined, // joined from users profile
       rating: Number(driver.rating),
       vehicle: {
-        type: driver.vehicleType as DriverProfileDto['vehicle']['type'],
+        type: driver.vehicleType,
         model: driver.vehicleModel,
         color: driver.vehicleColor,
         registration: driver.vehicleRegistration,

@@ -45,7 +45,7 @@ import {
   ScheduledRideListResultDto,
   RideStopResponseDto,
 } from './dto/rides.dto';
-import { RideTypeValue } from '../../shared/types/common';
+
 import { ApiEnvelopeDto } from '../../common/dto/api-envelope.dto';
 import { Roles } from '../../common/auth/decorators';
 
@@ -319,7 +319,7 @@ export class RidesController {
 
   private serialize(ride: {
     id: string;
-    rideType: RideTypeValue;
+    rideType: string;
     status: string;
     pickupLat: number;
     pickupLon: number;

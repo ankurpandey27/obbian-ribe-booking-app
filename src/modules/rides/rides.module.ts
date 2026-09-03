@@ -12,6 +12,7 @@ import { DriversModule } from '../drivers/drivers.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { OpsModule } from '../ops/ops.module';
 import { GrowthModule } from '../growth/growth.module';
+import { CatalogModule } from '../catalog/catalog.module';
 
 /**
  * Rides �?" the ride lifecycle owner. Future `trip-svc`.
@@ -28,6 +29,7 @@ import { GrowthModule } from '../growth/growth.module';
     LedgerModule,
     OpsModule,
     GrowthModule,
+    CatalogModule,
   ],
   controllers: [RidesController],
   providers: [

@@ -36,10 +36,13 @@ export class RequestRideDto {
   dropoffLon: number;
 
   @ApiProperty({
-    enum: ['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'],
+    example: 'CABX',
+    description:
+      'Ride category code. Validated against the active catalog for the request city at request time.',
   })
-  @IsEnum(['CABX_SAVER', 'CABX', 'CABXL', 'COMFORT', 'AUTO', 'TWO_WHEELER'])
-  rideType: RideTypeValue;
+  @IsString()
+  @MaxLength(32)
+  rideType: string;
 
   @ApiPropertyOptional({ example: 'Delhi' })
   @IsOptional()
