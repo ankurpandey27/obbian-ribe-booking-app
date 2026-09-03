@@ -3,8 +3,9 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const TIMESTAMP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -31,15 +32,19 @@ export function signPayload(
 }
 
 /**
- * Service-to-service signature for Roju→Obbian agent calls. Enforced only
- * when AGENT_HMAC_SECRET is configured (production); dev runs without it.
+ * Service-to-service signature for Roju→Obbian agent calls. ALWAYS enforced —
+ * if AGENT_HMAC_SECRET is unset the guard throws rather than failing open.
  * Signature covers a canonical (sorted-key) JSON body + timestamp.
  */
 @Injectable()
 export class RojuSignatureGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const secret = process.env.AGENT_HMAC_SECRET ?? '';
-    if (!secret) return true; // dev mode — user JWT still required globally
+    // Fail closed: an insecure deployment must not silently accept unsigned
+    // agent traffic. Configure AGENT_HMAC_SECRET in every environment.
+    if (!secret) {
+      throw new UnauthorizedException('Service signature not configured');
+    }
 
     const request = context.switchToHttp().getRequest();
     const timestamp = request.headers['x-roju-timestamp'];
@@ -55,7 +60,13 @@ export class RojuSignatureGuard implements CanActivate {
       throw new BadRequestException('Stale service timestamp');
     }
     const expected = signPayload(secret, timestamp, request.body ?? {});
-    if (expected.length !== signature.length || expected !== signature) {
+    // Constant-time comparison to avoid timing side-channels.
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const signatureBuf = Buffer.from(signature, 'utf8');
+    if (
+      expectedBuf.length !== signatureBuf.length ||
+      !timingSafeEqual(expectedBuf, signatureBuf)
+    ) {
       throw new BadRequestException('Invalid service signature');
     }
     return true;

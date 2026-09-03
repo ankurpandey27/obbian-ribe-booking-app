@@ -49,8 +49,17 @@ export class FraudService {
       this.guardConcurrency(riderId),
       this.guardDuplicatePickup(riderId, pickupLat, pickupLon, city),
     ]).catch((err: unknown) => {
+      // Reject explicit fraud violations — never let them pass silently.
       if (err instanceof ForbiddenException) throw err;
-      this.logger.warn('fraud guard dependency unavailable; allowing request');
+      // Dependency unavailable (Redis/DB down): fail closed. A rider who trips
+      // a real limit during an outage is denied rather than allowed through.
+      // The request path can decide to retry; the security path does not.
+      this.logger.error(
+        `fraud guard dependency unavailable for rider=${riderId}: ${String(err)}`,
+      );
+      throw new ForbiddenException(
+        'Unable to verify ride request; please retry shortly',
+      );
     });
   }
 

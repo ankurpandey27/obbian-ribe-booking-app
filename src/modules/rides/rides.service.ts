@@ -715,15 +715,18 @@ export class RidesService {
       );
     }
 
-    const penaltyRole =
-      cancelledBy === 'DRIVER' || cancelledBy === 'RIDER' ? cancelledBy : null;
-    const penalty = penaltyRole
-      ? await this.penalties.evaluate(
-          penaltyRole === 'DRIVER' ? (ride.driverId ?? '') : ride.riderId,
-          penaltyRole,
-          ride.createdAt,
-        )
-      : { offenceIndex: 0, penaltyPaise: 0 };
+    // PENALTY BYPASS GUARD: 'SYSTEM' must never arrive from a client. Only the
+    // server sets SYSTEM (e.g. automated no-driver timeout). Accepting it from
+    // the client would let a rider/driver cancel without paying the fee.
+    if (cancelledBy === 'SYSTEM') {
+      throw new ForbiddenException('Invalid cancellation source');
+    }
+
+    const penalty = await this.penalties.evaluate(
+      cancelledBy === 'DRIVER' ? (ride.driverId ?? '') : ride.riderId,
+      cancelledBy,
+      ride.createdAt,
+    );
     const fee = toRupees(penalty.penaltyPaise);
 
     const cancelled = await this.db.transaction(async (tx) => {
@@ -738,13 +741,15 @@ export class RidesService {
         },
         'RIDE_CANCELLED',
       );
-      if (penaltyRole) {
+      // Only record a penalty when the cancelling party is a real user role.
+      // SYSTEM cancellations (server-side) carry no penalty.
+      if (cancelledBy === 'RIDER' || cancelledBy === 'DRIVER') {
         await this.penalties.record(
           {
             userId:
-              penaltyRole === 'DRIVER' ? (ride.driverId ?? '') : ride.riderId,
+              cancelledBy === 'DRIVER' ? (ride.driverId ?? '') : ride.riderId,
             rideId,
-            role: penaltyRole,
+            role: cancelledBy,
             reason,
             createdAt: ride.createdAt,
             driverId: ride.driverId ?? undefined,

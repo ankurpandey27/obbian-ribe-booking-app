@@ -107,9 +107,7 @@ export class OtpService {
         this.logger.error(`SMS dispatch failed for ${phone}: ${err.message}`);
       }
     }
-    this.logger.log(
-      `OTP sent to ${phone} (provider=${this.provider}, code=${code})`,
-    );
+    this.logger.log(`OTP sent to ${phone} (provider=${this.provider})`);
   }
 
   async verifyOtp(phone: string, otp: string): Promise<boolean> {

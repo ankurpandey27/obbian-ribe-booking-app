@@ -62,21 +62,33 @@ export const jwtConfig = registerAs('jwt', () => {
   };
 });
 
-export const otpConfig = registerAs('otp', () => ({
-  provider: process.env.OTP_PROVIDER || 'dev',
-  expirySeconds: parseInt(process.env.OTP_EXPIRY_SECONDS || '300', 10),
-  maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10),
-  resendCooldownSeconds: parseInt(
-    process.env.OTP_RESEND_COOLDOWN_SECONDS || '30',
-    10,
-  ),
-  devCode: process.env.OTP_DEV_CODE || '123456',
-  msg91AuthKey: process.env.MSG91_AUTH_KEY,
-  msg91SenderId: process.env.MSG91_SENDER_ID,
-  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
-  twilioFromNumber: process.env.TWILIO_FROM_NUMBER,
-}));
+export const otpConfig = registerAs('otp', () => {
+  const provider = process.env.OTP_PROVIDER || 'dev';
+  const devCode = process.env.OTP_DEV_CODE || '123456';
+  const env = process.env.NODE_ENV || 'development';
+  // Fail fast rather than run production on a universal OTP. A misconfigured
+  // deploy that leaves provider=dev lets ANY user log in with code 123456.
+  if (env === 'production' && (provider === 'dev' || devCode === '123456')) {
+    throw new Error(
+      'OTP_PROVIDER must be a real provider (msg91/twilio) and OTP_DEV_CODE must not be the default in production',
+    );
+  }
+  return {
+    provider,
+    expirySeconds: parseInt(process.env.OTP_EXPIRY_SECONDS || '300', 10),
+    maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10),
+    resendCooldownSeconds: parseInt(
+      process.env.OTP_RESEND_COOLDOWN_SECONDS || '30',
+      10,
+    ),
+    devCode,
+    msg91AuthKey: process.env.MSG91_AUTH_KEY,
+    msg91SenderId: process.env.MSG91_SENDER_ID,
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+    twilioFromNumber: process.env.TWILIO_FROM_NUMBER,
+  };
+});
 
 export const mapsConfig = registerAs('maps', () => ({
   provider: process.env.MAPS_PROVIDER || 'google',

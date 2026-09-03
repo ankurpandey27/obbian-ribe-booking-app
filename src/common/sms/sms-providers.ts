@@ -15,8 +15,10 @@ export interface SmsProvider {
 export class DevSmsProvider implements SmsProvider {
   private readonly logger = new Logger(DevSmsProvider.name);
 
-  send(phone: string, message: string): Promise<void> {
-    this.logger.log(`[dev-sms] → ${phone}: ${message}`);
+  send(phone: string, _message: string): Promise<void> {
+    // NEVER log the message body — it contains the OTP. Log only that a send
+    // happened and to which phone. Redacted to comply with AGENTS.md §6.
+    this.logger.log(`[dev-sms] → ${phone}`);
     return Promise.resolve();
   }
 }
@@ -68,9 +70,12 @@ export class Msg91SmsProvider implements SmsProvider {
   ) {}
 
   /**
-   * MSG91 sendhttp API. NOTE: for India production, DLT-approved
-   * templates are mandatory — switch to the v5 flow API
-   * (https://control.msg91.com/api/v5/flow/) with your flow_id.
+   * MSG91 sendhttp API.
+   * ⚠️ SECURITY NOTE: this legacy GET puts authkey in the URL query string,
+   * where it can leak via server/proxy/CDN logs. For production, migrate to
+   * the v5 flow API (https://control.msg91.com/api/v5/flow/) with your
+   * flow_id — it POSTs credentials in the body. Also: for India production,
+   * DLT-approved templates are mandatory.
    */
   async send(phone: string, message: string): Promise<void> {
     const url = new URL('https://api.msg91.com/api/sendhttp.php');

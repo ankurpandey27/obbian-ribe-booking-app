@@ -7,9 +7,10 @@ import {
   HttpStatus,
   Param,
   Post,
-  Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -17,7 +18,6 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
-  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -99,19 +99,14 @@ export class PaymentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Razorpay webhook endpoint (signature verified)' })
   @ApiOkResponse({ type: WebhookResultDto })
-  @ApiQuery({
-    name: 'signature',
-    required: false,
-    description: 'Razorpay signature',
-  })
-  async webhook(
-    @Body() body: unknown,
-    @Query('signature') signature?: string,
-    @Query('x-razorpay-signature') headerSignature?: string,
-  ) {
+  async webhook(@Body() body: unknown, @Req() req: Request) {
+    // Razorpay sends the signature in the x-razorpay-signature HEADER, not the
+    // query string. Reading it from the header is what makes verification work
+    // and closes the forgery vector a query-param read would leave open.
+    const signature = req.headers['x-razorpay-signature'];
     return this.paymentsService.handleWebhook(
       body,
-      signature ?? headerSignature,
+      typeof signature === 'string' ? signature : undefined,
     );
   }
 

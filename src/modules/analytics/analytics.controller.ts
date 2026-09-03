@@ -10,6 +10,7 @@ import {
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsSummaryDto } from './dto/analytics.dto';
 import { ApiEnvelopeDto } from '../../common/dto/api-envelope.dto';
+import { Roles } from '../../common/auth/decorators';
 
 @ApiTags('analytics')
 @ApiBearerAuth()
@@ -22,6 +23,7 @@ export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
   @Get('summary')
+  @Roles('ADMIN')
   @ApiOperation({
     summary: 'Ride/rev/fleet aggregates for the last N days (dashboard)',
   })

@@ -35,7 +35,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const cacheKey = `idempotency:${request.method}:${request.originalUrl}:${key}`;
+    // Include userId so two different users retrying the same endpoint with
+    // the same idempotency key cannot collide (cross-tenant cache leak).
+    const userId =
+      (request.user as { sub?: string } | undefined)?.sub ?? 'anon';
+    const cacheKey = `idempotency:${userId}:${request.method}:${request.originalUrl}:${key}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
