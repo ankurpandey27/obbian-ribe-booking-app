@@ -23,6 +23,7 @@ const pool = new Pool({
     process.env.DATABASE_URL ??
     'postgresql://postgres:postgres@localhost:5433/ride_booking',
 });
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
 const db = drizzle(pool, { schema });
 
 // ── 17 ride categories from the product doc ──────────────────────────────

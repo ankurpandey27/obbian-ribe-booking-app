@@ -4,6 +4,8 @@ import { PricingService } from './pricing.service';
 import { SurgeService } from './surge.service';
 import { FareBreakdownService } from './fare-breakdown.service';
 import { InvoiceService } from './invoice.service';
+import { DynamicPricingService } from './dynamic-pricing.service';
+import { StubWeatherProvider } from './weather.provider';
 import { MapsModule } from '../maps/maps.module';
 import { GrowthModule } from '../growth/growth.module';
 import { CatalogModule } from '../catalog/catalog.module';
@@ -13,7 +15,7 @@ import { CatalogModule } from '../catalog/catalog.module';
  *
  * FareBreakdownService and InvoiceService are exported because RidesService
  * writes both at completion, inside the same transaction as the COMPLETED
- * transition (ADR-014) �?" a ride cannot be completed without its receipt.
+ * transition (ADR-014) — a ride cannot be completed without its receipt.
  */
 @Module({
   imports: [MapsModule, GrowthModule, CatalogModule],
@@ -23,7 +25,15 @@ import { CatalogModule } from '../catalog/catalog.module';
     SurgeService,
     FareBreakdownService,
     InvoiceService,
+    DynamicPricingService,
+    { provide: 'WEATHER_PROVIDER', useClass: StubWeatherProvider },
   ],
-  exports: [PricingService, SurgeService, FareBreakdownService, InvoiceService],
+  exports: [
+    PricingService,
+    SurgeService,
+    FareBreakdownService,
+    InvoiceService,
+    DynamicPricingService,
+  ],
 })
 export class PricingModule {}

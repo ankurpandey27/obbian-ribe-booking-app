@@ -96,12 +96,22 @@ export const mapsConfig = registerAs('maps', () => ({
   osrmBaseUrl: process.env.OSRM_BASE_URL || 'http://router.project-osrm.org',
 }));
 
-export const razorpayConfig = registerAs('razorpay', () => ({
-  keyId: process.env.RAZORPAY_KEY_ID,
-  keySecret: process.env.RAZORPAY_KEY_SECRET,
-  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
-  payoutAccount: process.env.RAZORPAY_PAYOUT_ACCOUNT,
-}));
+export const razorpayConfig = registerAs('razorpay', () => {
+  const env = process.env.NODE_ENV || 'development';
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  // Fail fast rather than run production with unsigned webhooks. A forged
+  // payment.captured webhook can mark unpaid rides COMPLETED and trigger
+  // driver payouts — unrecoverable money movement.
+  if (env === 'production' && !webhookSecret) {
+    throw new Error('RAZORPAY_WEBHOOK_SECRET is REQUIRED in production');
+  }
+  return {
+    keyId: process.env.RAZORPAY_KEY_ID,
+    keySecret: process.env.RAZORPAY_KEY_SECRET,
+    webhookSecret,
+    payoutAccount: process.env.RAZORPAY_PAYOUT_ACCOUNT,
+  };
+});
 
 export const queueConfig = registerAs('queue', () => ({
   prefix: process.env.BULLMQ_PREFIX || 'ride-booking',

@@ -57,6 +57,23 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
+  // Capture raw body for webhook HMAC verification (Razorpay signs the raw
+  // wire bytes). Must run BEFORE the JSON parser consumes the stream.
+  app.use(
+    (
+      req: import('express').Request,
+      res: import('express').Response,
+      next: import('express').NextFunction,
+    ) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        (req as { rawBody?: Buffer }).rawBody = Buffer.concat(chunks);
+        next();
+      });
+      req.on('error', next);
+    },
+  );
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
 
   // Unified API contract enforcement

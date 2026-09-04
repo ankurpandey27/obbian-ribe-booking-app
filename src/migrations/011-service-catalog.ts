@@ -91,6 +91,17 @@ export class ServiceCatalog011 implements MigrationInterface {
       `INSERT INTO catalog_versions (scope, version) VALUES ('global', 1) ON CONFLICT (scope) DO NOTHING`,
     );
 
+    // ── message_catalog (Module 2) ───────────────────────────────────────────
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS message_catalog (
+        key varchar(128) PRIMARY KEY,
+        scope varchar(50) NOT NULL DEFAULT 'global',
+        message jsonb NOT NULL DEFAULT '{}'::jsonb,
+        description varchar(256),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
     // ── fare_configs.rideType: enum → varchar (catalog-driven) ──────────────
     // Drop the enum-constrained column type so any catalog code is valid.
     await queryRunner.query(
@@ -111,6 +122,7 @@ export class ServiceCatalog011 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE fare_configs ALTER COLUMN "rideType" TYPE ride_type USING "rideType"::text::ride_type`,
     );
+    await queryRunner.query(`DROP TABLE IF EXISTS message_catalog`);
     await queryRunner.query(`DROP TABLE IF EXISTS catalog_versions`);
     await queryRunner.query(`DROP TABLE IF EXISTS ride_category_cities`);
     await queryRunner.query(`DROP TABLE IF EXISTS ride_categories`);

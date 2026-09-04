@@ -7,7 +7,6 @@ import {
   Post,
   Put,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -22,9 +21,11 @@ import { Roles } from '../../common/auth/decorators';
 import { CatalogService } from './catalog.service';
 import {
   CatalogResponseDto,
+  CreateFaqDto,
   CreateRideCategoryDto,
   CreateServiceDto,
   SetCategoryCityDto,
+  UpdateFaqDto,
   UpdateRideCategoryDto,
   UpdateServiceDto,
 } from './dto/catalog.dto';
@@ -52,7 +53,6 @@ export class CatalogController {
 @ApiTags('catalog-admin')
 @ApiBearerAuth()
 @Controller('admin/catalog')
-@UseGuards(Roles('ADMIN'))
 export class CatalogAdminController {
   constructor(private readonly catalog: CatalogService) {}
 
@@ -126,5 +126,42 @@ export class CatalogAdminController {
       dto.isAvailable,
       dto.sortOrder,
     );
+  }
+
+  // ── Ride category FAQs (Module 6) ────────────────────────────────────────
+  @Get('ride-categories/:code/faqs')
+  @Public()
+  @ApiOperation({ summary: 'Get FAQs for a ride category' })
+  @ApiParam({ name: 'code', example: 'CABX' })
+  @ApiQuery({ name: 'locale', example: 'te-IN', required: false })
+  async getFaqs(
+    @Param('code') code: string,
+    @Query('locale') locale = 'te-IN',
+  ) {
+    return this.catalog.getFaqs(code, locale);
+  }
+
+  @Post('ride-categories/faqs')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Create a ride-category FAQ' })
+  async createFaq(@Body() dto: CreateFaqDto) {
+    return this.catalog.createFaq(dto);
+  }
+
+  @Put('ride-categories/faqs/:id')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update a ride-category FAQ' })
+  @ApiParam({ name: 'id' })
+  async updateFaq(@Param('id') id: string, @Body() dto: UpdateFaqDto) {
+    return this.catalog.updateFaq(id, dto);
+  }
+
+  @Delete('ride-categories/faqs/:id')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Delete a ride-category FAQ' })
+  @ApiParam({ name: 'id' })
+  async deleteFaq(@Param('id') id: string) {
+    await this.catalog.deleteFaq(id);
+    return { success: true };
   }
 }

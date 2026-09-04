@@ -69,19 +69,110 @@ export class MapsService {
     pickupLon: number,
     dropoffLat: number,
     dropoffLon: number,
+    opts: { trafficAware?: boolean } = {},
   ): Promise<RouteInfo> {
     const key = `route:${pickupLat.toFixed(5)},${pickupLon.toFixed(5)}:${dropoffLat.toFixed(5)},${dropoffLon.toFixed(5)}`;
     const cached = await this.redis.get(key);
-    if (cached) return JSON.parse(cached) as RouteInfo;
+    if (cached && !opts.trafficAware) return JSON.parse(cached) as RouteInfo;
 
     const route = await (this.provider === 'google'
-      ? this.googleRoute(pickupLat, pickupLon, dropoffLat, dropoffLon)
+      ? this.googleRoute(
+          pickupLat,
+          pickupLon,
+          dropoffLat,
+          dropoffLon,
+          opts.trafficAware,
+        )
       : this.osrmRoute(pickupLat, pickupLon, dropoffLat, dropoffLon));
 
-    await this.redis
-      .set(key, JSON.stringify(route), 'EX', CACHE_TTL_ROUTE)
-      .catch(() => undefined);
+    // Only cache non-traffic routes (traffic varies minute-to-minute)
+    if (!opts.trafficAware) {
+      await this.redis
+        .set(key, JSON.stringify(route), 'EX', CACHE_TTL_ROUTE)
+        .catch(() => undefined);
+    }
     return route;
+  }
+
+  /**
+   * Reroute an active ride when traffic/incident degrades ETA beyond a
+   * threshold. Returns the new route, or null if the current route is still
+   * acceptable (no reroute needed).
+   */
+  async reroute(
+    rideId: string,
+    currentLat: number,
+    currentLon: number,
+    destLat: number,
+    destLon: number,
+    currentEtaMin: number,
+    rerouteThresholdPct = 25,
+  ): Promise<{ route: RouteInfo; reason: string } | null> {
+    // Get live-traffic ETA from current position to destination
+    const live = await this.getRoute(currentLat, currentLon, destLat, destLon, {
+      trafficAware: true,
+    });
+
+    // Reroute if live ETA exceeds the planned ETA by more than the threshold
+    const threshold = currentEtaMin * (1 + rerouteThresholdPct / 100);
+    if (live.durationMin > threshold) {
+      return {
+        route: live,
+        reason: `ETA degraded: planned ${currentEtaMin.toFixed(0)}min, live ${live.durationMin.toFixed(0)}min (threshold ${rerouteThresholdPct}%)`,
+      };
+    }
+    return null;
+  }
+
+  /** Correct Google polyline5 decoder. Returns [] on any error. */
+  private decodePolyline(
+    polyline: string,
+  ): Array<{ lat: number; lon: number }> {
+    try {
+      const points: Array<{ lat: number; lon: number }> = [];
+      let index = 0,
+        lat = 0,
+        lng = 0;
+      while (index < polyline.length) {
+        let result = 0,
+          shift = 0,
+          b: number;
+        do {
+          b = polyline.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        lat += result & 1 ? ~(result >> 1) : result >> 1;
+        result = shift = 0;
+        do {
+          b = polyline.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        lng += result & 1 ? ~(result >> 1) : result >> 1;
+        points.push({ lat: lat * 1e-5, lon: lng * 1e-5 });
+      }
+      return points;
+    } catch {
+      return [];
+    }
+  }
+
+  private haversine(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   /* ------------------------------ providers ------------------------------ */
@@ -143,12 +234,16 @@ export class MapsService {
     pLon: number,
     dLat: number,
     dLon: number,
+    trafficAware = false,
   ): Promise<RouteInfo> {
     if (!this.googleApiKey)
       throw new ServiceUnavailableException(
         'Google Maps API key not configured',
       );
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pLat},${pLon}&destination=${dLat},${dLon}&mode=driving&alternatives=false&key=${this.googleApiKey}`;
+    const trafficModel = trafficAware
+      ? '&trafficModel=best_guess&departure_time=now'
+      : '';
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pLat},${pLon}&destination=${dLat},${dLon}&mode=driving&alternatives=false${trafficModel}&key=${this.googleApiKey}`;
     const res = await fetch(url);
     const data = (await res.json()) as {
       status: string;
@@ -156,6 +251,7 @@ export class MapsService {
         legs?: Array<{
           distance?: { value: number };
           duration?: { value: number };
+          duration_in_traffic?: { value: number };
         }>;
         overview_polyline?: { points: string };
       }>;
@@ -164,9 +260,13 @@ export class MapsService {
       throw new ServiceUnavailableException('Route not found');
     }
     const leg = data.routes[0].legs?.[0];
+    // Prefer live traffic duration when available
+    const durationSec = trafficAware
+      ? (leg?.duration_in_traffic?.value ?? leg?.duration?.value ?? 0)
+      : (leg?.duration?.value ?? 0);
     return {
       distanceKm: (leg?.distance?.value ?? 0) / 1000,
-      durationMin: (leg?.duration?.value ?? 0) / 60,
+      durationMin: durationSec / 60,
       polyline: data.routes[0].overview_polyline?.points,
     };
   }
@@ -199,5 +299,30 @@ export class MapsService {
       durationMin: route.duration / 60,
       polyline: route.geometry,
     };
+  }
+
+  /**
+   * Check if a route corridor intersects any active incident area. Uses a
+   * correct polyline5 decoder and checks sampled points against each incident's
+   * radius. Returns true if any point falls within any incident area.
+   */
+  checkIncidentOnRoute(
+    polyline: string | undefined,
+    activeIncidentAreas: Array<{ lat: number; lon: number; radiusM: number }>,
+  ): boolean {
+    if (!polyline || activeIncidentAreas.length === 0) return false;
+    const points = this.decodePolyline(polyline);
+    for (let i = 0; i < points.length; i += 3) {
+      for (const area of activeIncidentAreas) {
+        const d = this.haversine(
+          points[i].lat,
+          points[i].lon,
+          area.lat,
+          area.lon,
+        );
+        if (d * 1000 <= area.radiusM) return true;
+      }
+    }
+    return false;
   }
 }

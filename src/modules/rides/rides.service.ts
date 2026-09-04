@@ -617,6 +617,29 @@ export class RidesService {
       return ride;
     }
 
+    // TRIP-FRAUD GATE: a ride cannot be completed implausibly fast or without
+    // covering a minimum distance. Pricing uses quoted distanceKm/durationMin,
+    // not measured GPS, so without this gate a malicious driver could complete
+    // a ride instantly and collect the full quoted fare.
+    const MIN_RIDE_DURATION_SEC = 60; // at least 1 minute of trip time
+    const MIN_RIDE_DISTANCE_KM = 0.2; // at least 200m (matches LIMITS intent)
+    if (ride.startedAt) {
+      const tripSec = (Date.now() - new Date(ride.startedAt).getTime()) / 1000;
+      if (tripSec < MIN_RIDE_DURATION_SEC) {
+        throw new BadRequestException(
+          `Trip too short to complete (${Math.round(tripSec)}s < ${MIN_RIDE_DURATION_SEC}s minimum)`,
+        );
+      }
+    }
+    if (
+      Number(ride.distanceKm) > 0 &&
+      Number(ride.distanceKm) < MIN_RIDE_DISTANCE_KM
+    ) {
+      throw new BadRequestException(
+        `Trip distance too short to complete (${Number(ride.distanceKm).toFixed(2)}km < ${MIN_RIDE_DISTANCE_KM}km minimum)`,
+      );
+    }
+
     const config = await this.pricing.getConfig(ride.city, ride.rideType);
     const stopSummary = await this.rideStops.summarise(rideId);
 

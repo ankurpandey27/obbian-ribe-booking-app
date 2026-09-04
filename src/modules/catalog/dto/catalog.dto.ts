@@ -271,3 +271,59 @@ export class SetCategoryCityDto {
   @IsInt()
   sortOrder?: number;
 }
+
+/** Create a ride-category FAQ (admin). */
+export class CreateFaqDto {
+  @ApiProperty({ example: 'CABX' })
+  @IsString()
+  @MaxLength(32)
+  categoryCode!: string;
+
+  @ApiProperty({
+    example: {
+      'en-IN': 'How is fare calculated?',
+      'hi-IN': 'किराया कैसे होता है?',
+      'te-IN': 'ఫీజు ఎలా లెక్కిస్తారు?',
+    },
+  })
+  @IsObject()
+  question!: Record<string, string>;
+
+  @ApiProperty({
+    example: {
+      'en-IN': 'Fare = base + per-km + per-minute, floored at minimum.',
+      'hi-IN': 'किराया = बेस + प्रति किमी + प्रति मिनट, न्यूनतम सीमा के साथ।',
+      'te-IN': 'ఫీజు = బేస్ + ప్రతి కిమీ + ప్రతి నిమిషం, కనీసం పరిమితితో.',
+    },
+  })
+  @IsObject()
+  answer!: Record<string, string>;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+}
+
+/** Update a ride-category FAQ (admin). */
+export class UpdateFaqDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  question?: Record<string, string>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  answer?: Record<string, string>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

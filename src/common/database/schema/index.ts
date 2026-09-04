@@ -33,3 +33,4 @@ export * from './ops';
 export * from './engagement';
 export * from './growth';
 export * from './geo';
+export * from './shared-rides';

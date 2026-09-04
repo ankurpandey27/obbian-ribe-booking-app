@@ -37,6 +37,9 @@ import { OpsModule } from './modules/ops/ops.module';
 import { GrowthModule } from './modules/growth/growth.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { I18nModule } from './common/i18n/i18n.module';
+import { SharedRidesModule } from './modules/shared-rides/shared-rides.module';
+import { RouteOptimizationModule } from './modules/route-optimization/route-optimization.module';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -94,6 +97,9 @@ import { ConfigService } from '@nestjs/config';
     GrowthModule,
     AdminModule,
     CatalogModule,
+    I18nModule,
+    SharedRidesModule,
+    RouteOptimizationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

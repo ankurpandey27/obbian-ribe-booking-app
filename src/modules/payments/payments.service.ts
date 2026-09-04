@@ -252,15 +252,22 @@ export class PaymentsService {
    * Sharing the transaction means a rollback releases the claim and the next
    * retry is free to try again.
    */
-  async handleWebhook(body: unknown, signature?: string) {
-    const rawBody = JSON.stringify(body);
+  async handleWebhook(body: unknown, signature?: string, rawBody?: Buffer) {
     const secret = this.config.get<string>('razorpay.webhookSecret');
-    if (secret) {
-      const { validateWebhookSignature } =
-        await import('razorpay/dist/utils/razorpay-utils');
-      const valid = validateWebhookSignature(rawBody, signature ?? '', secret);
-      if (!valid) throw new BadRequestException('Invalid webhook signature');
+    // Fail closed: a webhook without a configured secret is rejected outright.
+    // An insecure deployment must not silently accept unsigned webhooks.
+    if (!secret) {
+      throw new BadRequestException(
+        'Webhook signature verification not configured',
+      );
     }
+    // Verify the HMAC over the RAW wire bytes — Razorpay signs the raw body,
+    // not a re-serialization of the parsed JSON.
+    const raw = rawBody ? rawBody.toString('utf8') : JSON.stringify(body);
+    const { validateWebhookSignature } =
+      await import('razorpay/dist/utils/razorpay-utils');
+    const valid = validateWebhookSignature(raw, signature ?? '', secret);
+    if (!valid) throw new BadRequestException('Invalid webhook signature');
 
     const payload = body as {
       /** Razorpay's own delivery id — the dedupe key. */
@@ -313,7 +320,7 @@ export class PaymentsService {
             eventType: event,
             referenceType: 'payment',
             referenceId: payment.id,
-            rawBody,
+            rawBody: rawBody ? rawBody.toString('utf8') : undefined,
           },
           tx,
         );
@@ -354,7 +361,7 @@ export class PaymentsService {
             eventType: event,
             referenceType: 'payment',
             referenceId: payment.id,
-            rawBody,
+            rawBody: rawBody ? rawBody.toString('utf8') : undefined,
           },
           tx,
         );

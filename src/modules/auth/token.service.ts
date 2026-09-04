@@ -123,6 +123,7 @@ export class TokenService {
     try {
       return await this.jwt.verifyAsync<JwtPayload>(token, {
         secret: this.config.get<string>('jwt.accessSecret'),
+        algorithms: ['HS256'], // pin algorithm to prevent confusion attacks
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');

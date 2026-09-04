@@ -5,6 +5,7 @@ import {
   catalogVersions,
   rideCategories,
   rideCategoryCities,
+  rideCategoryFaqs,
   services,
 } from '../../common/database/schema';
 
@@ -32,7 +33,7 @@ export class CatalogService {
         serviceCode: services.code,
         serviceDisplayName: services.displayName,
         serviceIconUrl: services.iconUrl,
-        serviceSortOrder: services.sortOrder,
+        servicesortOrder: services.sortOrder,
         categoryId: rideCategories.id,
         categoryCode: rideCategories.code,
         categoryDisplayName: rideCategories.displayName,
@@ -75,7 +76,7 @@ export class CatalogService {
           code: row.serviceCode,
           displayName: this.resolveLocale(row.serviceDisplayName, locale),
           iconUrl: row.serviceIconUrl,
-          sortOrder: row.serviceSortOrder,
+          sortOrder: row.servicesortOrder,
           categories: [],
         });
       }
@@ -356,5 +357,74 @@ export class CatalogService {
       .returning();
     await this.bumpVersion();
     return row;
+  }
+
+  // ── Ride category FAQs (Module 6) ────────────────────────────────────────
+
+  /** Get FAQs for a category (public, for FE rendering). */
+  async getFaqs(categoryCode: string, locale: string) {
+    const rows = await this.db
+      .select()
+      .from(rideCategoryFaqs)
+      .where(
+        and(
+          eq(rideCategoryFaqs.categoryCode, categoryCode),
+          eq(rideCategoryFaqs.isActive, true),
+        ),
+      )
+      .orderBy(asc(rideCategoryFaqs.sortOrder));
+
+    return rows.map((r) => ({
+      id: r.id,
+      question: this.resolveLocale(r.question, locale),
+      answer: this.resolveLocale(r.answer, locale),
+      sortOrder: r.sortOrder,
+    }));
+  }
+
+  /** Admin: create a FAQ. */
+  async createFaq(input: {
+    categoryCode: string;
+    question: Record<string, string>;
+    answer: Record<string, string>;
+    sortOrder?: number;
+  }) {
+    const [row] = await this.db
+      .insert(rideCategoryFaqs)
+      .values({
+        categoryCode: input.categoryCode,
+        question: input.question,
+        answer: input.answer,
+        sortOrder: input.sortOrder ?? 0,
+      })
+      .returning();
+    await this.bumpVersion();
+    return row;
+  }
+
+  /** Admin: update a FAQ. */
+  async updateFaq(
+    id: string,
+    data: Partial<{
+      question: Record<string, string>;
+      answer: Record<string, string>;
+      sortOrder: number;
+      isActive: boolean;
+    }>,
+  ) {
+    const [row] = await this.db
+      .update(rideCategoryFaqs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(rideCategoryFaqs.id, id))
+      .returning();
+    if (!row) throw new NotFoundException(`FAQ ${id} not found`);
+    await this.bumpVersion();
+    return row;
+  }
+
+  /** Admin: delete a FAQ. */
+  async deleteFaq(id: string) {
+    await this.db.delete(rideCategoryFaqs).where(eq(rideCategoryFaqs.id, id));
+    await this.bumpVersion();
   }
 }

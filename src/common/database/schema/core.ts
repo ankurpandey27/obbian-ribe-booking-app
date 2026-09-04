@@ -637,3 +637,17 @@ export const catalogVersions = pgTable('catalog_versions', {
     .notNull()
     .defaultNow(),
 });
+
+// ── I18N Message Catalog (Module 2) ───────────────────────────────────────
+// Backend-managed localized strings. The future CMS will call the same
+// /admin/i18n endpoints; until then, ops manage copy via seed + admin API.
+
+export const messageCatalog = pgTable('message_catalog', {
+  key: varchar('key', { length: 128 }).notNull().primaryKey(),
+  scope: varchar('scope', { length: 50 }).notNull().default('global'),
+  message: jsonb('message').notNull().$type<Record<string, string>>(),
+  description: varchar('description', { length: 256 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

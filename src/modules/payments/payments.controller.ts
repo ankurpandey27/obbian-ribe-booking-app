@@ -100,13 +100,15 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Razorpay webhook endpoint (signature verified)' })
   @ApiOkResponse({ type: WebhookResultDto })
   async webhook(@Body() body: unknown, @Req() req: Request) {
-    // Razorpay sends the signature in the x-razorpay-signature HEADER, not the
-    // query string. Reading it from the header is what makes verification work
-    // and closes the forgery vector a query-param read would leave open.
+    // Razorpay sends the signature in the x-razorpay-signature HEADER. The raw
+    // wire bytes are required for HMAC verification (re-serializing the parsed
+    // body would not match what Razorpay signed).
     const signature = req.headers['x-razorpay-signature'];
+    const rawBody = (req as { rawBody?: Buffer }).rawBody;
     return this.paymentsService.handleWebhook(
       body,
       typeof signature === 'string' ? signature : undefined,
+      rawBody,
     );
   }
 

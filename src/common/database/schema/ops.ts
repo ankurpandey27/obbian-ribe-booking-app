@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -193,5 +194,35 @@ export const adminAuditLog = pgTable(
     index('IDX_admin_audit_actor_created').on(t.actorUserId, t.createdAt),
     index('IDX_admin_audit_target').on(t.targetType, t.targetId),
     index('IDX_admin_audit_created').on(t.createdAt),
+  ],
+);
+
+/**
+ * Active incident areas affecting routing. When a ride's corridor intersects
+ * one of these, the route optimization service triggers a reroute + advisory.
+ * TTL-bound: rows auto-expire via Redis TTL on the cache; this table is the
+ * durable source for ops dashboards.
+ */
+export const incidentAreas = pgTable(
+  'incident_areas',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    incidentId: varchar('incident_id', { length: 64 }),
+    areaType: varchar('area_type', { length: 20 })
+      .notNull()
+      .default('RESTRICTED'), // RESTRICTED, DIVERSION, CONGESTION
+    lat: doublePrecision('lat').notNull(),
+    lon: doublePrecision('lon').notNull(),
+    radiusM: integer('radius_m').notNull().default(500),
+    reason: varchar('reason', { length: 256 }),
+    isActive: boolean('is_active').notNull().default(true),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('IDX_incident_areas_active').on(t.isActive),
+    index('IDX_incident_areas_location').on(t.lat, t.lon),
   ],
 );
