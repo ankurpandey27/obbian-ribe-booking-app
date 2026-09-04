@@ -1,6 +1,6 @@
 {
     "name": "obbian-ride-backend",
-    "version": "0.11.0",
+    "version": "0.10.1",
     "description": "Modular-monolith ride-booking backend (NestJS, Postgres/PostGIS, Redis, Kafka, Socket.IO)",
     "private": true,
     "license": "UNLICENSED",
@@ -19,6 +19,7 @@
         "migration:revert": "typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:revert",
         "seed": "ts-node src/seed.ts",
         "seed:catalog": "ts-node src/seed-catalog.ts",
+        "seed:i18n": "ts-node src/seed-i18n.ts",
         "seed:redis": "node scripts/seed-redis.mjs"
     },
     "dependencies": {

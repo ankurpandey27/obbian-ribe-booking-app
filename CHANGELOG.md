@@ -2,6 +2,24 @@
 
 All notable changes are documented here. Versioning follows Semantic Versioning.
 
+## [0.10.1] - 2026-09-04
+
+### Added
+- `schedule_item` action in `AgentRidesService` — AI agent can now schedule
+  future-dated rides through the same hardened path as widget scheduling.
+  Accepts `scheduledFor` (ISO 8601) in params; validates future time server-side
+  via `ScheduledRidesService.schedule()`. Includes fraud guard
+  (`FraudService.guardRideRequest`) and active-ride check before dispatch.
+- `SCHEDULE_CONFIRMED` template key (en-IN / hi-IN) for the schedule
+  confirmation response.
+
+### Changed
+- `ScheduledRidesService.dispatch()` now runs `FraudService.guardRideRequest()`
+  before `createRide()` — closes the pre-existing gap where scheduled ride
+  dispatch bypassed fraud checks.
+- `RidesModule` exports `ScheduledRidesService` so `AgentModule` can inject it.
+- `AgentExecuteRequestDto.action` enum extended with `'schedule_item'`.
+
 ## [0.10.0] - 2026-08-31
 
 ### Changed

@@ -14,6 +14,7 @@ import { scheduledRides } from '../../common/database/schema';
 import { QUEUE_SCHEDULED } from '../../common/queues/queues.module';
 import { RideTypeValue } from '../../shared/types/common';
 import { PricingService } from '../pricing/pricing.service';
+import { FraudService } from './fraud.service';
 import { Ride } from './entities/ride.entity';
 import { ScheduledRide } from './entities/scheduled-ride.entity';
 import { RidesService } from './rides.service';
@@ -37,6 +38,7 @@ export class ScheduledRidesService {
   constructor(
     @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
     private readonly pricing: PricingService,
+    private readonly fraud: FraudService,
     private readonly ridesService: RidesService,
     @InjectQueue(QUEUE_SCHEDULED) private readonly scheduledQueue: Queue,
     config: ConfigService,
@@ -105,6 +107,12 @@ export class ScheduledRidesService {
         [scheduled.rideType],
       ),
       this.pricing.getConfig(scheduled.city, scheduled.rideType),
+      this.fraud.guardRideRequest(
+        scheduled.riderId,
+        scheduled.pickupLat,
+        scheduled.pickupLon,
+        scheduled.city,
+      ),
     ]);
     const ride = await this.ridesService.createRide({
       riderId: scheduled.riderId,

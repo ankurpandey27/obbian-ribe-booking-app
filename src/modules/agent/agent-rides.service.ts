@@ -8,8 +8,10 @@ import Redis from 'ioredis';
 import { InjectRedis } from '../../common/redis/redis.decorator';
 import { PricingService } from '../pricing/pricing.service';
 import { RidesService } from '../rides/rides.service';
+import { ScheduledRidesService } from '../rides/scheduled-rides.service';
 import { TrackingService } from '../tracking/tracking.service';
 import type { JwtPayload } from '../auth/token.service';
+import type { RideTypeValue } from '../../shared/types/common';
 import type {
   AgentExecuteRequestDto,
   AgentQuoteRequestDto,
@@ -41,6 +43,7 @@ export class AgentRidesService {
     @InjectRedis() private readonly redis: Redis,
     private readonly pricing: PricingService,
     private readonly rides: RidesService,
+    private readonly scheduledRides: ScheduledRidesService,
     private readonly tracking: TrackingService,
   ) {}
 
@@ -110,6 +113,9 @@ export class AgentRidesService {
         case 'create_item':
           response = await this.executeCreate(user, dto);
           break;
+        case 'schedule_item':
+          response = await this.executeSchedule(user, dto);
+          break;
         case 'cancel_item':
           response = await this.executeCancel(user, dto);
           break;
@@ -167,7 +173,7 @@ export class AgentRidesService {
       pickupLon: requireNumber(dto.params, 'pickupLon'),
       dropoffLat: requireNumber(dto.params, 'dropoffLat'),
       dropoffLon: requireNumber(dto.params, 'dropoffLon'),
-      rideType: stored.rideType as never,
+      rideType: stored.rideType,
       city: stored.city,
     });
 
@@ -178,6 +184,60 @@ export class AgentRidesService {
       data: {
         status: ride.status,
         estimatedFarePaise: Math.round(Number(ride.estimatedFare) * 100),
+      },
+    };
+  }
+
+  /**
+   * Book a FUTURE ride for the rider. Reuses the exact same quote re-validation
+   * path as executeCreate (expiry, self-ownership, fare lock) so a scheduled
+   * booking is held to the same fraud/price-lock bar as an immediate one. The
+   * actual ride is materialised later by ScheduledRidesService.dispatch() →
+   * ridesService.createRide, which keeps the fraud guard + state machine in
+   * force at dispatch time rather than at booking time.
+   */
+  private async executeSchedule(
+    user: JwtPayload,
+    dto: AgentExecuteRequestDto,
+  ): Promise<AgentExecuteResponseDto> {
+    if (!dto.quoteId) {
+      throw new BadRequestException('quoteId is required for schedule_item');
+    }
+    const raw = await this.redis.get(`agent:quote:${dto.quoteId}`);
+    if (!raw) throw new BadRequestException('QUOTE_EXPIRED');
+    const stored = JSON.parse(raw) as StoredAgentQuote;
+    if (stored.userId !== user.sub) {
+      throw new BadRequestException('QUOTE_EXPIRED'); // do not leak existence
+    }
+    const clientFarePaise = Number(dto.params['farePaise']);
+    if (
+      Number.isFinite(clientFarePaise) &&
+      clientFarePaise !== stored.farePaise
+    ) {
+      throw new BadRequestException('FARE_MISMATCH');
+    }
+
+    const scheduledFor = parseScheduledFor(dto.params['scheduledFor']);
+    const scheduled = await this.scheduledRides.schedule({
+      riderId: user.sub,
+      pickupLat: requireNumber(dto.params, 'pickupLat'),
+      pickupLon: requireNumber(dto.params, 'pickupLon'),
+      dropoffLat: requireNumber(dto.params, 'dropoffLat'),
+      dropoffLon: requireNumber(dto.params, 'dropoffLon'),
+      rideType: stored.rideType as RideTypeValue,
+      city: stored.city,
+      scheduledFor,
+    });
+
+    return {
+      success: true,
+      itemId: scheduled.id,
+      templateKey: 'SCHEDULE_CONFIRMED',
+      data: {
+        scheduledFor: scheduledFor.toISOString(),
+        status: scheduled.status,
+        rideType: scheduled.rideType,
+        city: scheduled.city,
       },
     };
   }
@@ -277,6 +337,13 @@ export class AgentRidesService {
           error: { code: 'NO_DRIVERS', message: String(message) },
         };
       }
+      if (code === 'scheduledFor') {
+        return {
+          success: false,
+          templateKey: 'SCHEDULE_TIME_INVALID',
+          error: { code, message: String(message) },
+        };
+      }
     }
     return {
       success: false,
@@ -292,4 +359,21 @@ function requireNumber(params: Record<string, unknown>, key: string): number {
     throw new BadRequestException(`${key} must be a resolved coordinate`);
   }
   return v;
+}
+
+/**
+ * Parse + validate an ISO 8601 `scheduledFor`. The window bounds (>=5min ahead,
+ * <=maxHoursAhead) are re-enforced inside ScheduledRidesService.schedule(), so
+ * this only normalises the input and rejects a non-date / non-ISO value early
+ * with a transport-appropriate error.
+ */
+function parseScheduledFor(value: unknown): Date {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new BadRequestException('scheduledFor must be an ISO 8601 timestamp');
+  }
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) {
+    throw new BadRequestException('scheduledFor must be an ISO 8601 timestamp');
+  }
+  return new Date(ms);
 }

@@ -47,10 +47,27 @@ export class AgentQuoteRequestDto {
 
 export class AgentExecuteRequestDto {
   @ApiProperty({
-    enum: ['create_item', 'cancel_item', 'check_status', 'modify_item'],
+    enum: [
+      'create_item',
+      'cancel_item',
+      'check_status',
+      'modify_item',
+      'schedule_item',
+    ],
   })
-  @IsIn(['create_item', 'cancel_item', 'check_status', 'modify_item'])
-  action!: 'create_item' | 'cancel_item' | 'check_status' | 'modify_item';
+  @IsIn([
+    'create_item',
+    'cancel_item',
+    'check_status',
+    'modify_item',
+    'schedule_item',
+  ])
+  action!:
+    | 'create_item'
+    | 'cancel_item'
+    | 'check_status'
+    | 'modify_item'
+    | 'schedule_item';
 
   @ApiProperty({ type: Object })
   @IsObject()

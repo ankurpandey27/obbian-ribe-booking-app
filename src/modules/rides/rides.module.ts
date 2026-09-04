@@ -40,6 +40,11 @@ import { CatalogModule } from '../catalog/catalog.module';
     ScheduledRidesWorker,
     RideParticipantGuard,
   ],
-  exports: [RidesService, RideStopsService, RideParticipantGuard],
+  exports: [
+    RidesService,
+    RideStopsService,
+    RideParticipantGuard,
+    ScheduledRidesService,
+  ],
 })
 export class RidesModule {}
