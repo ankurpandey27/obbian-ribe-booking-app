@@ -15,13 +15,22 @@
 import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import Redis from 'ioredis';
-import { In } from 'typeorm';
-import datasource from './config/typeorm.config';
-import { User } from './modules/users/entities/user.entity';
-import { Driver } from './modules/drivers/entities/driver.entity';
-import { FareConfig } from './modules/pricing/entities/fare-config.entity';
-import { Promo } from './modules/promos/entities/promo.entity';
-import { SavedLocation } from './modules/users/entities/saved-location.entity';
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { inArray, eq, sql } from 'drizzle-orm';
+import * as schema from './common/database/schema';
+import {
+  users,
+  drivers,
+  fareConfigs,
+  promos,
+  savedLocations,
+} from './common/database/schema';
+import type { NewFareConfig } from './modules/pricing/entities/fare-config.entity';
+import type { NewUser } from './modules/users/entities/user.entity';
+import type { NewDriver } from './modules/drivers/entities/driver.entity';
+import type { NewSavedLocation } from './modules/users/entities/saved-location.entity';
+
 import { DRIVERS_GEO_KEY } from './common/redis/geo.service';
 import { RideTypeValue } from './shared/types/common';
 
@@ -184,7 +193,17 @@ const jitter = (i: number) => (((i * 37) % 1000) - 500) / 100000;
 
 async function main() {
   const reset = process.argv.includes('--reset');
-  const ds = await datasource.initialize();
+  const pool: Pool = process.env.DATABASE_URL
+    ? new Pool({ connectionString: process.env.DATABASE_URL })
+    : new Pool({
+        host: process.env.DATABASE_HOST ?? 'localhost',
+        port: Number(process.env.DATABASE_PORT ?? 5432),
+        user: process.env.DATABASE_USER ?? 'postgres',
+        password: process.env.DATABASE_PASSWORD ?? 'postgres',
+        database: process.env.DATABASE_NAME ?? 'ride_booking',
+      });
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  const db = drizzle(pool, { schema });
   const redis = new Redis({
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6380),
@@ -192,15 +211,8 @@ async function main() {
     tls: (process.env.REDIS_TLS ?? 'false') === 'true' ? {} : undefined,
   });
 
-  const userRepo = ds.getRepository(User);
-  const driverRepo = ds.getRepository(Driver);
-  const fareRepo = ds.getRepository(FareConfig);
-  const promoRepo = ds.getRepository(Promo);
-  const savedRepo = ds.getRepository(SavedLocation);
-
   try {
     if (reset) {
-      // both current and any previous phone scheme (demo ranges only)
       const demoPhones = [
         ...Array.from({ length: 100 }, (_, i) => `+91${9000000000 + i}`),
         ...Array.from({ length: 100 }, (_, i) => `+91${9010000000 + i}`),
@@ -213,16 +225,21 @@ async function main() {
           (_, i) => `+9190001${String(i + 1).padStart(4, '0')}`,
         ),
       ];
-      await userRepo.delete({ phoneNumber: In(demoPhones) });
-      await fareRepo.delete({ city: In(CITIES.map((c) => c.name)) });
-      await promoRepo.delete({ isActive: true });
+      await db.delete(users).where(inArray(users.phoneNumber, demoPhones));
+      await db.delete(fareConfigs).where(
+        inArray(
+          fareConfigs.city,
+          CITIES.map((c) => c.name),
+        ),
+      );
+      await db.delete(promos).where(eq(promos.isActive, true));
       console.log(
         '  reset: removed previous demo users, fare configs and promos',
       );
     }
 
     /* 1. fare configs — every city × every ride type */
-    const fares: Partial<FareConfig>[] = [];
+    const fares: NewFareConfig[] = [];
     for (const city of CITIES) {
       for (const rideType of RIDE_TYPES) {
         const [base, km, min, minFare] = FARE_REF[rideType];
@@ -239,10 +256,23 @@ async function main() {
         });
       }
     }
-    await fareRepo.upsert(fares, ['city', 'rideType']);
+    await db
+      .insert(fareConfigs)
+      .values(fares)
+      .onConflictDoUpdate({
+        target: [fareConfigs.city, fareConfigs.rideType],
+        set: {
+          baseFare: sql`excluded.${fareConfigs.baseFare}`,
+          perKmRate: sql`excluded.${fareConfigs.perKmRate}`,
+          perMinuteRate: sql`excluded.${fareConfigs.perMinuteRate}`,
+          minimumFare: sql`excluded.${fareConfigs.minimumFare}`,
+          surgeMultiplier: sql`excluded.${fareConfigs.surgeMultiplier}`,
+          isActive: sql`excluded.${fareConfigs.isActive}`,
+        },
+      });
 
     /* 2. riders — 2 per city */
-    const riders: Partial<User>[] = [];
+    const riders: NewUser[] = [];
     let riderIdx = 0;
     for (const _city of CITIES) {
       for (let k = 0; k < 2; k += 1) {
@@ -260,10 +290,23 @@ async function main() {
         riderIdx += 1;
       }
     }
-    await userRepo.upsert(riders, ['phoneNumber']);
+    await db
+      .insert(users)
+      .values(riders)
+      .onConflictDoUpdate({
+        target: [users.phoneNumber],
+        set: {
+          firstName: sql`excluded.${users.firstName}`,
+          lastName: sql`excluded.${users.lastName}`,
+          email: sql`excluded.${users.email}`,
+          rating: sql`excluded.${users.rating}`,
+          isVerified: sql`excluded.${users.isVerified}`,
+          lastLoginAt: sql`excluded.${users.lastLoginAt}`,
+        },
+      });
 
     /* 3. drivers — ONLINE + geo index + heartbeat */
-    const drivers: Partial<Driver>[] = [];
+    const driversToInsert: NewDriver[] = [];
     const geo: { userId: string; lon: number; lat: number }[] = [];
     let driverIdx = 0;
     for (const city of CITIES) {
@@ -273,41 +316,76 @@ async function main() {
         const lat = city.lat + jitter(driverIdx);
         const lon = city.lon + jitter(driverIdx + 7);
 
-        await userRepo.upsert(
-          {
+        await db
+          .insert(users)
+          .values({
             phoneNumber: phone,
             role: 'DRIVER',
             firstName: first,
             lastName: last,
             rating: 5.0,
             isVerified: true,
-          },
-          ['phoneNumber'],
-        );
-        const driverUser = await userRepo.findOneBy({ phoneNumber: phone });
+          })
+          .onConflictDoUpdate({
+            target: [users.phoneNumber],
+            set: {
+              firstName: sql`excluded.${users.firstName}`,
+              lastName: sql`excluded.${users.lastName}`,
+              rating: sql`excluded.${users.rating}`,
+              isVerified: sql`excluded.${users.isVerified}`,
+            },
+          });
+        const driverUser = await db
+          .select()
+          .from(users)
+          .where(eq(users.phoneNumber, phone))
+          .limit(1);
 
-        drivers.push({
-          userId: driverUser.id,
-          licenseNumber: `DL-${city.name.slice(0, 3).toUpperCase()}-${String(driverIdx + 1).padStart(3, '0')}`,
-          vehicleRegistration: `${city.name.slice(0, 3).toUpperCase()}-${String(driverIdx + 1).padStart(2, '0')}-AB-${String(1000 + driverIdx)}`,
-          vehicleModel: VEHICLE_MODELS[vehicleType],
-          vehicleColor: COLORS[driverIdx % COLORS.length],
-          vehicleType,
-          status: 'ONLINE',
-          rating: round2(4.4 + ((driverIdx * 7) % 6) / 10), // 4.4–4.9
-          totalRides: 120 + driverIdx * 37,
-          completionRate: 98.5,
-          acceptanceRate: 96,
-          walletBalance: 0,
-          upiId: `${first.toLowerCase()}.${last.toLowerCase()}@okhdfc`,
-          lastLocationUpdateAt: new Date(),
-          onlineSince: new Date(),
-        });
-        geo.push({ userId: driverUser.id, lon, lat });
+        if (driverUser.length > 0) {
+          driversToInsert.push({
+            userId: driverUser[0].id,
+            licenseNumber: `DL-${city.name.slice(0, 3).toUpperCase()}-${String(driverIdx + 1).padStart(3, '0')}`,
+            vehicleRegistration: `${city.name.slice(0, 3).toUpperCase()}-${String(driverIdx + 1).padStart(2, '0')}-AB-${String(1000 + driverIdx)}`,
+            vehicleModel: VEHICLE_MODELS[vehicleType],
+            vehicleColor: COLORS[driverIdx % COLORS.length],
+            vehicleType,
+            status: 'ONLINE',
+            rating: round2(4.4 + ((driverIdx * 7) % 6) / 10),
+            totalRides: 120 + driverIdx * 37,
+            completionRate: 98.5,
+            acceptanceRate: 96,
+            walletBalance: 0,
+            upiId: `${first.toLowerCase()}.${last.toLowerCase()}@okhdfc`,
+            lastLocationUpdateAt: new Date(),
+            onlineSince: new Date(),
+          });
+          geo.push({ userId: driverUser[0].id, lon, lat });
+        }
         driverIdx += 1;
       }
     }
-    await driverRepo.upsert(drivers, ['userId']);
+    await db
+      .insert(drivers)
+      .values(driversToInsert)
+      .onConflictDoUpdate({
+        target: [drivers.userId],
+        set: {
+          licenseNumber: sql`excluded.${drivers.licenseNumber}`,
+          vehicleRegistration: sql`excluded.${drivers.vehicleRegistration}`,
+          vehicleModel: sql`excluded.${drivers.vehicleModel}`,
+          vehicleColor: sql`excluded.${drivers.vehicleColor}`,
+          vehicleType: sql`excluded.${drivers.vehicleType}`,
+          status: sql`excluded.${drivers.status}`,
+          rating: sql`excluded.${drivers.rating}`,
+          totalRides: sql`excluded.${drivers.totalRides}`,
+          completionRate: sql`excluded.${drivers.completionRate}`,
+          acceptanceRate: sql`excluded.${drivers.acceptanceRate}`,
+          walletBalance: sql`excluded.${drivers.walletBalance}`,
+          upiId: sql`excluded.${drivers.upiId}`,
+          lastLocationUpdateAt: sql`excluded.${drivers.lastLocationUpdateAt}`,
+          onlineSince: sql`excluded.${drivers.onlineSince}`,
+        },
+      });
 
     /* 4. Redis — geo pool + heartbeat + cached location per driver */
     for (const { userId, lon, lat } of geo) {
@@ -320,10 +398,12 @@ async function main() {
       );
     }
 
-    /* 5. promos */ const now = new Date();
+    /* 5. promos */
+    const now = new Date();
     const yearFromNow = new Date(now.getTime() + 365 * 24 * 3600 * 1000);
-    await promoRepo.upsert(
-      [
+    await db
+      .insert(promos)
+      .values([
         {
           code: 'WELCOME20',
           discountPercent: 20,
@@ -351,18 +431,33 @@ async function main() {
           validUntil: yearFromNow,
           isActive: true,
         },
-      ] as Promo[],
-      ['code'],
-    );
+      ])
+      .onConflictDoUpdate({
+        target: [promos.code],
+        set: {
+          discountPercent: sql`excluded.${promos.discountPercent}`,
+          maxDiscount: sql`excluded.${promos.maxDiscount}`,
+          maxUsesPerUser: sql`excluded.${promos.maxUsesPerUser}`,
+          validFrom: sql`excluded.${promos.validFrom}`,
+          validUntil: sql`excluded.${promos.validUntil}`,
+          isActive: sql`excluded.${promos.isActive}`,
+        },
+      });
 
     /* 6. saved locations — HOME + WORK per demo rider */
     const riderPhonesAll = Array.from({ length: 16 }, (_, i) => RIDER_PHONE(i));
-    const demoRiders = await userRepo.find({
-      where: { phoneNumber: In(riderPhonesAll) },
-      order: { createdAt: 'ASC' },
-    });
-    await savedRepo.delete({ userId: In(demoRiders.map((u) => u.id)) });
-    const saved: Partial<SavedLocation>[] = [];
+    const demoRiders = await db
+      .select()
+      .from(users)
+      .where(inArray(users.phoneNumber, riderPhonesAll))
+      .orderBy(users.createdAt);
+    await db.delete(savedLocations).where(
+      inArray(
+        savedLocations.userId,
+        demoRiders.map((u) => u.id),
+      ),
+    );
+    const saved: NewSavedLocation[] = [];
     for (const [idx, u] of demoRiders.entries()) {
       const city = CITIES[Math.floor(idx / 2) % CITIES.length];
       saved.push(
@@ -382,17 +477,19 @@ async function main() {
         },
       );
     }
-    await savedRepo.save(saved as SavedLocation[]);
+    if (saved.length > 0) {
+      await db.insert(savedLocations).values(saved);
+    }
 
     console.log(
-      `\nSeed complete: ${fares.length} fare configs, ${riders.length} riders, ${drivers.length} drivers (ONLINE + geo pool), 3 promos, ${saved.length} saved locations.`,
+      `\nSeed complete: ${fares.length} fare configs, ${riders.length} riders, ${driversToInsert.length} drivers (ONLINE + geo pool), 3 promos, ${saved.length} saved locations.`,
     );
     console.log(
       'Demo login: POST /auth/send-otp { phone } → POST /auth/verify-otp { phone, otp: "123456" } — riders +91 90000000xx, drivers +91 90100000xx.',
     );
   } finally {
     await redis.quit();
-    await ds.destroy();
+    await pool.end();
   }
 }
 

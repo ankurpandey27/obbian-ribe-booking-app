@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
+import { PartitionMaintenanceService } from './partition-maintenance.service';
 
 export const DRIZZLE_DB = 'DRIZZLE_DB';
 
@@ -55,10 +56,9 @@ function createDrizzle(pool: Pool): NodePgDatabase<typeof schema> {
 }
 
 /**
- * The SQL-transparent data-access layer (ADR-002). Shares the Postgres
- * instance/credentials with the TypeORM migration runner; all RUNTIME queries
- * go through this handle. Optionally provides a second handle for an
- * analytics read replica.
+ * The SQL-transparent data-access layer (ADR-002). All runtime queries go
+ * through this handle. Optionally provides a second handle for an analytics
+ * read replica.
  */
 @Global()
 @Module({
@@ -91,7 +91,8 @@ function createDrizzle(pool: Pool): NodePgDatabase<typeof schema> {
         return createDrizzle(createPool(config, url, { max: 10 }));
       },
     },
+    PartitionMaintenanceService,
   ],
-  exports: [DRIZZLE_DB, ANALYTICS_DB, PG_POOL],
+  exports: [DRIZZLE_DB, ANALYTICS_DB, PG_POOL, PartitionMaintenanceService],
 })
 export class DrizzleModule {}

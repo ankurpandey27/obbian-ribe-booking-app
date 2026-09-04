@@ -74,7 +74,7 @@ export class ScheduledRidesService {
         removeOnComplete: { age: 86400 },
       },
     );
-    return scheduled as ScheduledRide;
+    return scheduled;
   }
 
   async dispatch(scheduledRideId: string): Promise<Ride | null> {
@@ -145,7 +145,7 @@ export class ScheduledRidesService {
       .where(eq(scheduledRides.riderId, riderId))
       .orderBy(asc(scheduledRides.scheduledFor))
       .limit(20);
-    return rows as ScheduledRide[];
+    return rows;
   }
 
   async cancel(riderId: string, id: string): Promise<{ cancelled: boolean }> {

@@ -1,7 +1,7 @@
 /**
  * Catalog seed — idempotent upsert of services, ride categories, city
  * availability, and catalog version. Driven by the catalog tables (Drizzle),
- * not the TypeORM seed. Re-runnable safely.
+ * Re-runnable safely.
  *
  *   ts-node src/seed-catalog.ts
  *

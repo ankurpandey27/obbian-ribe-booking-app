@@ -14,9 +14,6 @@
         "test:watch": "jest --watch",
         "test:cov": "jest --coverage",
         "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --passWithNoTests",
-        "migration:generate": "typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:generate",
-        "migration:run": "typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:run",
-        "migration:revert": "typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:revert",
         "seed": "ts-node src/seed.ts",
         "seed:catalog": "ts-node src/seed-catalog.ts",
         "seed:i18n": "ts-node src/seed-i18n.ts",
@@ -35,7 +32,6 @@
         "@nestjs/schedule": "^4.1.1",
         "@nestjs/swagger": "^8.1.0",
         "@nestjs/throttler": "^6.3.0",
-        "@nestjs/typeorm": "^10.0.2",
         "@nestjs/websockets": "^10.4.15",
         "@socket.io/redis-adapter": "8.3.0",
         "bullmq": "^5.34.8",
@@ -53,8 +49,7 @@
         "razorpay": "^2.9.5",
         "reflect-metadata": "^0.2.2",
         "rxjs": "^7.8.1",
-        "socket.io": "^4.8.1",
-        "typeorm": "^0.3.20"
+        "socket.io": "^4.8.1"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

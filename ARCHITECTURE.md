@@ -119,7 +119,6 @@ Consumers must be idempotent on `event.id`.
 ## 8. Versioning
 
 - API: URL-versioned `/api/v1`; additive changes only inside v1.
-- Schema: numbered TypeORM migrations, forward-only in prod (`down` exists
-  for dev rescue, never run in prod).
+- Schema: Drizzle schema definitions, forward-only migrations.
 - App: semver in package.json + CHANGELOG.md; every behavior change ships
   with a changelog entry.

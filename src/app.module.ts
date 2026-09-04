@@ -4,7 +4,6 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { configFactory } from './config/configuration';
-import { DatabaseModule } from './common/database/database.module';
 import { DrizzleModule } from './common/database/drizzle.module';
 import { RedisModule, REDIS_CLIENT } from './common/redis/redis.module';
 import { RedisThrottlerStorage } from './common/redis/redis-throttler.storage';
@@ -54,7 +53,6 @@ import { ConfigService } from '@nestjs/config';
 
     // Global infrastructure
     ObservabilityModule,
-    DatabaseModule,
     DrizzleModule,
     RedisModule,
     KafkaModule,

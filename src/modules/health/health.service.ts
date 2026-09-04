@@ -1,9 +1,14 @@
-import { BeforeApplicationShutdown, Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import {
+  BeforeApplicationShutdown,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { Pool } from 'pg';
 import { InjectRedis } from '../../common/redis/redis.decorator';
 import { Redis } from 'ioredis';
 import { DependencyCheckDto, HealthDto, LivenessDto } from './dto/health.dto';
+import { PG_POOL } from '../../common/database/drizzle.module';
 
 /**
  * Without a per-dependency deadline, `ioredis` (maxRetriesPerRequest: null)
@@ -25,7 +30,7 @@ export class HealthService implements BeforeApplicationShutdown {
   private shuttingDown = false;
 
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(PG_POOL) private readonly pool: Pool,
     @InjectRedis() private readonly redis: Redis,
   ) {}
 
@@ -89,7 +94,7 @@ export class HealthService implements BeforeApplicationShutdown {
   }
 
   private async checkDatabase(): Promise<DependencyCheckDto> {
-    return this.timedCheck('database', () => this.dataSource.query('SELECT 1'));
+    return this.timedCheck('database', () => this.pool.query('SELECT 1'));
   }
 
   private async checkRedis(): Promise<DependencyCheckDto> {

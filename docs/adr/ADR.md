@@ -32,17 +32,10 @@ against boundary violations.
 TypeORM is in maintenance decline (−8% YoY, stalled releases, weak relation
 typing), while Drizzle hit v1.0 (+340% YoY, SQL-transparent, fully typed).
 
-**Decision:** ALL runtime data access goes through Drizzle
-(`DrizzleModule` → `DRIZZLE_DB`), migrated module-by-module in three waves:
-pricing/promos/users/drivers → rides/fraud/scheduled/auth/tracking/outbox →
-payments/settlement/ratings/analytics/notifications.
-
-**Residual TypeORM surface (intentional):**
-1. `DatabaseModule` boots migrations via `migrationsRun: true`.
-2. `typeorm.config.ts` CLI datasource for generating/running migrations.
-3. Legacy `*.entity.ts` classes remain as **type-only contracts** — rows are
-   structurally identical; a final sweep can replace them with
-   `typeof table.$inferSelect` exports from `common/database/schema`.
+**Decision:** ALL data access goes through Drizzle
+(`DrizzleModule` → `DRIZZLE_DB`). TypeORM has been fully removed — entities
+are now type-only stubs exporting `typeof table.$inferSelect`/`$inferInsert`
+from the Drizzle schema, and migrations are no longer TypeORM-based.
 
 **Consequences:** Hot paths get SQL-transparent typed queries with near-zero
 runtime overhead. Atomic ride transitions preserved via

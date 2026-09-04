@@ -61,9 +61,8 @@
 
 ## 2. Data layer rules (Drizzle)
 
-- ALL runtime data access uses Drizzle via `DRIZZLE_DB`
-  (`common/database/drizzle.module.ts`). Do NOT add TypeORM repositories —
-  TypeORM exists only to run migrations.
+- ALL data access uses Drizzle via `DRIZZLE_DB`
+  (`common/database/drizzle.module.ts`).
 - Schema source of truth: `src/common/database/schema/index.ts`.
   Column names are camelCase strings matching the hand-written migrations.
   **Never bulk-edit schema files with regex** — column names live as string

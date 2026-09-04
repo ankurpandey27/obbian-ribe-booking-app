@@ -16,7 +16,7 @@ product — target scale: **5M users / ~1M rides/day**.
 | Layer    | Tech                                                          |
 | -------- | ------------------------------------------------------------- |
 | Runtime  | Node.js 18+, NestJS 10, TypeScript                            |
-| Database | PostgreSQL 16 + PostGIS (Drizzle runtime; TypeORM migrations only) |
+| Database | PostgreSQL 16 + PostGIS (Drizzle ORM) |
 | Cache    | Redis 7 (ioredis) — geo index, heartbeats, offers, claims     |
 | Queues   | BullMQ (Redis-backed) — matching dispatch, scheduled rides    |
 | Events   | Transactional outbox → Kafka (brokerless mode supported)      |

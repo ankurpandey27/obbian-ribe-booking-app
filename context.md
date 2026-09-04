@@ -24,7 +24,7 @@ for 5M users / ~1M rides/day.
 | Layer | Tech |
 |---|---|
 | Runtime | Node 18+, NestJS 10, TypeScript |
-| Database | PostgreSQL 16 + PostGIS — runtime access via **Drizzle ORM**; TypeORM boots migrations only |
+| Database | PostgreSQL 16 + PostGIS — **Drizzle ORM** |
 | Cache/realtime | Redis 7 — geo index (`GEOADD/GEORADIUS`), TTL heartbeats, atomic claims, OTP store, surge counters |
 | Queues | BullMQ — matching dispatch, scheduled rides, payment processing, notifications |
 | Events | Transactional outbox → Kafka; brokerless fallback (`EVENTS_BROKER_ENABLED=false`) |
@@ -56,7 +56,7 @@ obbian-tech/
    ├─ config/configuration.ts # typed env registry (fail-fast JWT secrets in prod)
    ├─ common/                 # zero business logic (graduates to @app/shared)
    │  ├─ auth/                # global JwtAuthGuard, RolesGuard, @Public/@Roles/@CurrentUser
-   │  ├─ database/            # TypeORM boot (migrations), DrizzleModule (runtime), schema/
+   │  ├─ database/            # DrizzleModule (runtime), schema/
     │  │  └─ schema/           # Drizzle tables + enums
    │  ├─ events/              # EventBus (best-effort), OutboxService + relay worker (durable)
    │  ├─ filters/             # ApiErrorFilter → unified error envelope
